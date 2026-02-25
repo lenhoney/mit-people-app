@@ -118,7 +118,7 @@ export default function DashboardPage() {
       <div>
         <h1 className="text-3xl font-bold">Dashboard</h1>
         <p className="text-muted-foreground mt-1">
-          Overview of Epi-Use consultant activity at MIT
+          Overview of consultant activity
         </p>
       </div>
 

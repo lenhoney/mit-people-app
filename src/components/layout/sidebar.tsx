@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -33,18 +32,7 @@ export function Sidebar() {
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r bg-sidebar border-sidebar-border">
       <div className="flex h-16 items-center border-b border-sidebar-border px-5">
         <Link href="/dashboard" className="flex items-center gap-3">
-          <Image
-            src="/epi-use-logo.svg"
-            alt="EPI-USE"
-            width={110}
-            height={30}
-            priority
-            className="brightness-0 invert"
-          />
-          <div className="border-l border-sidebar-border pl-3">
-            <p className="text-[10px] font-semibold text-sidebar-foreground/60 uppercase tracking-wider leading-none">MIT People</p>
-            <p className="text-[10px] text-sidebar-foreground/40 leading-none mt-0.5">Manager</p>
-          </div>
+          <span className="text-xl font-bold tracking-tight text-sidebar-foreground">Populus</span>
         </Link>
       </div>
       <nav className="space-y-1 p-4">

@@ -70,7 +70,7 @@ export default function PeoplePage() {
         <div>
           <h1 className="text-3xl font-bold">People</h1>
           <p className="text-muted-foreground mt-1">
-            Manage Epi-Use consultants on the MIT contract
+            Manage your people
           </p>
         </div>
         <div className="flex gap-2">

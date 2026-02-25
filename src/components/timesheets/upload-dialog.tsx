@@ -82,7 +82,7 @@ export function TimesheetsUploadDialog({ open, onOpenChange, onUploadComplete }:
         </DialogHeader>
         <div className="space-y-4 py-4">
           <p className="text-sm text-muted-foreground">
-            Upload the MIT Timesheets spreadsheet (.xlsx). Only timesheets for people
+            Upload the Timesheets spreadsheet (.xlsx). Only timesheets for people
             already in the People table will be imported. Existing entries will be updated
             using week start date + user + task number as key.
           </p>

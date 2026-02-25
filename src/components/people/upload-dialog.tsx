@@ -115,7 +115,7 @@ export function PeopleUploadDialog({ open, onOpenChange, onUploadComplete }: Upl
         </DialogHeader>
         <div className="space-y-4 py-4">
           <p className="text-sm text-muted-foreground">
-            Upload the MIT People Rates spreadsheet (.xlsx). Existing people will be
+            Upload the People Rates spreadsheet (.xlsx). Existing people will be
             updated and new people will be added using the person name as key. The rate
             column will be assigned to the selected financial year.
           </p>

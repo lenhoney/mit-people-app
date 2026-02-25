@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Populus - Database ERD</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8f9fa;
+      padding: 32px;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 4px;
+    }
+    .header p {
+      font-size: 14px;
+      color: #6b7280;
+    }
+    .diagram-container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      padding: 32px;
+      overflow-x: auto;
+    }
+    .legend {
+      margin-top: 24px;
+      display: flex;
+      gap: 24px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #4b5563;
+    }
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+    .dot-pk { background: #f59e0b; }
+    .dot-fk { background: #3b82f6; }
+    .dot-unique { background: #8b5cf6; }
+    .dot-idx { background: #10b981; }
+    .footer {
+      text-align: center;
+      margin-top: 24px;
+      font-size: 12px;
+      color: #9ca3af;
+    }
+    @media print {
+      body { background: white; padding: 16px; }
+      .diagram-container { box-shadow: none; padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Populus &mdash; Entity Relationship Diagram</h1>
+    <p>SQLite Database Schema &bull; Generated February 2026</p>
+  </div>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+erDiagram
+    people {
+        INTEGER id PK
+        TEXT person UK "Unique name"
+        TEXT sow
+        TEXT role
+        TEXT kerb
+        TEXT status "Active / Not Active"
+        TEXT phone
+        TEXT work_anniversary
+        TEXT birthday "MM-DD format"
+        TEXT manager_name
+        TEXT business_unit
+        TEXT country "Default: South Africa"
+        TEXT photo
+        INTEGER managed_services "0 or 1"
+        INTEGER architecture "0 or 1"
+        INTEGER app_support "0 or 1"
+        INTEGER computing "0 or 1"
+        TEXT created_at
+        TEXT updated_at
+    }
+
+    people_rates {
+        INTEGER id PK
+        INTEGER person_id FK "references people.id"
+        TEXT fy_start "FY start date"
+        TEXT fy_end "FY end date"
+        TEXT fy_label "e.g. FY2026"
+        REAL rate "USD per hour"
+        TEXT created_at
+    }
+
+    timesheets {
+        INTEGER id PK
+        TEXT week_starts_on "YYYY-MM-DD"
+        TEXT category "Project or Personal Time Off"
+        TEXT user_name "matches people.person"
+        TEXT task_description
+        TEXT task_number "references projects"
+        TEXT state
+        REAL sunday
+        REAL monday
+        REAL tuesday
+        REAL wednesday
+        REAL thursday
+        REAL friday
+        REAL saturday
+        REAL total
+        TEXT created_at
+        TEXT updated_at
+    }
+
+    projects {
+        INTEGER id PK
+        TEXT task_number UK
+        TEXT task_description
+        TEXT group_label
+        REAL budget
+        TEXT status "Started / Completed"
+        TEXT project_lead
+        TEXT created_at
+        TEXT updated_at
+    }
+
+    planned_work {
+        INTEGER id PK
+        INTEGER person_id FK "references people.id"
+        TEXT task_number "references projects"
+        TEXT task_description
+        TEXT planned_start "YYYY-MM-DD"
+        TEXT planned_end "YYYY-MM-DD"
+        INTEGER allocation_pct "0-100"
+        TEXT created_at
+        TEXT updated_at
+    }
+
+    personal_time_off {
+        INTEGER id PK
+        INTEGER person_id FK "references people.id"
+        TEXT person_name
+        TEXT kerb
+        TEXT start_date "YYYY-MM-DD"
+        TEXT end_date "YYYY-MM-DD"
+        TEXT type "Personal / Sick / National Holiday"
+        TEXT leave_status
+        TEXT country
+        TEXT message
+        INTEGER business_days
+        INTEGER billable_days
+        TEXT created_at
+        TEXT updated_at
+    }
+
+    countries {
+        INTEGER id PK
+        TEXT name UK "e.g. South Africa"
+        TEXT code "ISO 2-letter e.g. ZA"
+        TEXT created_at
+    }
+
+    people ||--o{ people_rates : "has rates"
+    people ||--o{ planned_work : "assigned to"
+    people ||--o{ personal_time_off : "takes leave"
+    people ||--o{ timesheets : "logs hours (via name)"
+    projects ||--o{ timesheets : "tracked by (via task_number)"
+    projects ||--o{ planned_work : "planned for (via task_number)"
+    countries ||--o{ people : "based in (via name)"
+    </pre>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot dot-pk"></div> PK = Primary Key</div>
+    <div class="legend-item"><div class="legend-dot dot-fk"></div> FK = Foreign Key</div>
+    <div class="legend-item"><div class="legend-dot dot-unique"></div> UK = Unique</div>
+    <div class="legend-item"><div class="legend-dot dot-idx"></div> Indexed columns</div>
+  </div>
+
+  <div class="footer">
+    Populus &bull; 7 tables &bull; SQLite via better-sqlite3 &bull; Next.js
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      er: {
+        diagramPadding: 20,
+        layoutDirection: 'TB',
+        minEntityWidth: 100,
+        minEntityHeight: 75,
+        entityPadding: 15,
+        useMaxWidth: false
+      }
+    });
+  </script>
+</body>
+</html>

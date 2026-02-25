@@ -44,7 +44,7 @@ export function WorkAnniversary({ data }: WorkAnniversaryProps) {
           Work Anniversaries
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Epi-Use milestones this month
+          Work milestones this month
         </p>
       </CardHeader>
       <CardContent>

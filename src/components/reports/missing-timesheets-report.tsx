@@ -214,7 +214,7 @@ export function MissingTimesheetsReport() {
             ${buildColHtml(col2Items)}
           </div>
         </div>
-        <div class="footer">Generated on ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })} &bull; Epi-Use MIT People Manager</div>
+        <div class="footer">Generated on ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })} &bull; Populus</div>
       </body>
       </html>
     `);

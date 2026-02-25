@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Epi-Use MIT People Manager",
-  description: "Manage Epi-Use consultants working on the MIT contract",
+  title: "Populus",
+  description: "Populus - People Management",
 };
 
 export default function RootLayout({
