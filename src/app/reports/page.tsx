@@ -21,7 +21,7 @@ export default function ReportsPage() {
           <TabsTrigger value="projects">Project Revenue</TabsTrigger>
           <TabsTrigger value="people">People Hours</TabsTrigger>
           <TabsTrigger value="pto">Time Off</TabsTrigger>
-          <TabsTrigger value="missing-timesheets">Missing Timesheets</TabsTrigger>
+          <TabsTrigger value="missing-timesheets">Timesheets Report</TabsTrigger>
         </TabsList>
         <TabsContent value="projects">
           <ProjectReport />
