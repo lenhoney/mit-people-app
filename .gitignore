@@ -36,9 +36,12 @@ yarn-error.log*
 # vercel
 .vercel
 
-# database
-/data/
+# database (allow data/mit-people.db and data/photos/)
 *.db
+!/data/
+/data/*
+!/data/mit-people.db
+!/data/photos/
 
 # typescript
 *.tsbuildinfo
