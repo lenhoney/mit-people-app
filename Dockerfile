@@ -29,4 +29,16 @@ RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
 USER nextjs
 EXPOSE 3000
 
-CMD if [ "$RESEED_DB" = "true" ] || [ ! -f ./data/mit-people.db ]; then cp -r ./seed-data/* ./data/; fi && node server.js
+CMD echo "=== Populus startup ===" && \
+    echo "RESEED_DB=$RESEED_DB" && \
+    echo "DB exists: $([ -f ./data/mit-people.db ] && echo yes || echo no)" && \
+    echo "Seed DB size: $(ls -la ./seed-data/mit-people.db 2>/dev/null || echo 'MISSING')" && \
+    if [ "$RESEED_DB" = "true" ] || [ ! -f ./data/mit-people.db ]; then \
+      echo "Copying seed data to /app/data..." && \
+      cp -rv ./seed-data/* ./data/ && \
+      echo "Copy done. DB size: $(ls -la ./data/mit-people.db)" ; \
+    else \
+      echo "Skipping seed (DB already exists)" ; \
+    fi && \
+    echo "Final DB: $(ls -la ./data/mit-people.db 2>/dev/null || echo 'NO DB FILE')" && \
+    node server.js
