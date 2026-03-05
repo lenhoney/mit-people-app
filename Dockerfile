@@ -21,10 +21,12 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY --from=build /app/public ./public
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=build --chown=nextjs:nodejs /app/data ./seed-data
+COPY --from=build --chown=nextjs:nodejs /app/migrations ./migrations
 
 RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
 
 USER nextjs
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+CMD if [ "$RESEED_DB" = "true" ] || [ ! -f ./data/mit-people.db ]; then cp -r ./seed-data/* ./data/; fi && node server.js

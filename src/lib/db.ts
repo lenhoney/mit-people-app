@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import { runMigrations } from "./migrate";
 
 const DB_DIR = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DB_DIR, "mit-people.db");
@@ -315,6 +316,9 @@ function createDb(): Database.Database {
     WHERE pw.task_number IS NOT NULL
       AND pw.task_number NOT IN (SELECT task_number FROM projects)
   `);
+
+  // Run SQL file migrations from /migrations folder
+  runMigrations(db);
 
   // Gracefully close on process exit to avoid stale locks
   process.on("SIGTERM", () => { try { db.close(); } catch { /* ignore */ } });
