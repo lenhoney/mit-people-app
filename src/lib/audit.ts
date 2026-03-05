@@ -15,7 +15,7 @@ import { auth0 } from "@/lib/auth0";
 export async function logAudit(
   action: string,
   entityType: string,
-  entityId: string | number | null,
+  entityId: string | number | bigint | null,
   details: string
 ): Promise<void> {
   try {
