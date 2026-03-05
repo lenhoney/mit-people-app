@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
+import { logAudit } from "@/lib/audit";
 
 export async function GET() {
   try {
@@ -46,6 +47,7 @@ export async function POST(request: NextRequest) {
       project_lead || null
     );
 
+    await logAudit("CREATE", "project", result.lastInsertRowid, `Created project: ${task_number}`);
     return NextResponse.json(
       { id: result.lastInsertRowid, message: "Project created" },
       { status: 201 }

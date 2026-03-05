@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
+import { logAudit } from "@/lib/audit";
 
 export async function GET(request: NextRequest) {
   try {
@@ -62,6 +63,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     db.prepare("DELETE FROM personal_time_off WHERE id = ?").run(id);
+    await logAudit("DELETE", "pto", id, `Deleted PTO entry ID: ${id}`);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error deleting PTO entry:", error);

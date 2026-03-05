@@ -12,6 +12,7 @@ import {
   GanttChart,
   CalendarCheck2,
   Palmtree,
+  ScrollText,
   LogOut,
 } from "lucide-react";
 
@@ -37,6 +38,7 @@ const navItems = [
   { href: "/gantt", label: "Gantt Chart", icon: GanttChart },
   { href: "/planned-work", label: "Planned Work", icon: CalendarCheck2 },
   { href: "/time-off", label: "Time Off", icon: Palmtree },
+  { href: "/audit-trail", label: "Audit Trail", icon: ScrollText },
 ];
 
 export function Sidebar({ user }: SidebarProps) {

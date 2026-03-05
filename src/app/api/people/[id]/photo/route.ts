@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
+import { logAudit } from "@/lib/audit";
 import fs from "fs";
 import path from "path";
 
@@ -68,6 +69,7 @@ export async function POST(
     // Update database with filename
     db.prepare("UPDATE people SET photo = ?, updated_at = datetime('now') WHERE id = ?").run(filename, id);
 
+    await logAudit("UPDATE", "person_photo", id, `Uploaded photo for: ${person.person}`);
     return NextResponse.json({
       message: "Photo uploaded",
       photo: filename,
@@ -99,6 +101,7 @@ export async function DELETE(
 
     db.prepare("UPDATE people SET photo = NULL, updated_at = datetime('now') WHERE id = ?").run(id);
 
+    await logAudit("DELETE", "person_photo", id, `Removed photo for person ID: ${id}`);
     return NextResponse.json({ message: "Photo removed" });
   } catch (error) {
     console.error("Error removing photo:", error);

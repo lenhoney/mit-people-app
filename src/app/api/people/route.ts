@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
+import { logAudit } from "@/lib/audit";
 
 export async function GET() {
   try {
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
       business_unit || null, country || "South Africa"
     );
 
+    await logAudit("CREATE", "person", result.lastInsertRowid, `Created person: ${person}`);
     return NextResponse.json({ id: result.lastInsertRowid, message: "Person created" }, { status: 201 });
   } catch (error: unknown) {
     console.error("Error creating person:", error);

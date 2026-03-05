@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { parseTimesheets } from "@/lib/excel-parser";
+import { logAudit } from "@/lib/audit";
 
 export async function POST(request: NextRequest) {
   try {
@@ -84,6 +85,7 @@ export async function POST(request: NextRequest) {
 
     transaction();
 
+    await logAudit("CREATE", "timesheets_upload", null, `Uploaded ${rows.length} timesheets (${inserted} inserted, ${updated} updated, ${skipped} skipped)`);
     return NextResponse.json({
       message: "Upload successful",
       total: rows.length,

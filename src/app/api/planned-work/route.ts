@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import db, { cleanupPlannedWork } from "@/lib/db";
+import { logAudit } from "@/lib/audit";
 
 export async function GET(request: NextRequest) {
   try {
@@ -87,6 +88,9 @@ export async function POST(request: NextRequest) {
       pct
     );
 
+    // Look up person name for audit log
+    const personRow = db.prepare("SELECT person FROM people WHERE id = ?").get(person_id) as { person: string } | undefined;
+    await logAudit("CREATE", "planned_work", result.lastInsertRowid, `Created planned work: ${personRow?.person ?? person_id} → ${task_number}`);
     return NextResponse.json(
       { id: result.lastInsertRowid, message: "Planned work created/updated" },
       { status: 201 }

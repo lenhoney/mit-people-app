@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
+import { logAudit } from "@/lib/audit";
 
 interface PTORow {
   person_name: string;
@@ -328,6 +329,7 @@ export async function POST(request: NextRequest) {
 
     transaction();
 
+    await logAudit("CREATE", "pto_upload", null, `Uploaded ${rows.length} PTO entries (${inserted} new, ${updated} updated, ${matched} matched, ${unmatched} unmatched)`);
     return NextResponse.json({
       message: "PTO upload successful",
       total: rows.length,

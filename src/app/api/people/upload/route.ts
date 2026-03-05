@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { parsePeopleRates, makeFY, dateToFYEndYear } from "@/lib/excel-parser";
+import { logAudit } from "@/lib/audit";
 
 export async function POST(request: NextRequest) {
   try {
@@ -82,6 +83,7 @@ export async function POST(request: NextRequest) {
 
     transaction();
 
+    await logAudit("CREATE", "people_upload", null, `Uploaded ${rows.length} people (${insertedPeople} new, ${updatedPeople} updated, ${ratesSet} rates set) for ${fy.fy_label}`);
     return NextResponse.json({
       message: "Upload successful",
       total: rows.length,

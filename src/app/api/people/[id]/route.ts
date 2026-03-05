@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
+import { logAudit } from "@/lib/audit";
 
 export async function PUT(
   request: NextRequest,
@@ -37,6 +38,7 @@ export async function PUT(
       return NextResponse.json({ error: "Person not found" }, { status: 404 });
     }
 
+    await logAudit("UPDATE", "person", id, `Updated person: ${person}`);
     return NextResponse.json({ message: "Person updated" });
   } catch (error) {
     console.error("Error updating person:", error);
@@ -57,6 +59,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Person not found" }, { status: 404 });
     }
 
+    await logAudit("DELETE", "person", id, `Deleted person ID: ${id}`);
     return NextResponse.json({ message: "Person deleted" });
   } catch (error) {
     console.error("Error deleting person:", error);

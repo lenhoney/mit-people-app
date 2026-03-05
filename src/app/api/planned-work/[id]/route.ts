@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
+import { logAudit } from "@/lib/audit";
 
 export async function PUT(
   request: NextRequest,
@@ -46,6 +47,7 @@ export async function PUT(
       );
     }
 
+    await logAudit("UPDATE", "planned_work", id, `Updated planned work ID: ${id}`);
     return NextResponse.json({ message: "Planned work updated" });
   } catch (error) {
     console.error("Error updating planned work:", error);
@@ -71,6 +73,7 @@ export async function DELETE(
       );
     }
 
+    await logAudit("DELETE", "planned_work", id, `Deleted planned work ID: ${id}`);
     return NextResponse.json({ message: "Planned work deleted" });
   } catch (error) {
     console.error("Error deleting planned work:", error);

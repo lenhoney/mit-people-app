@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
+import { logAudit } from "@/lib/audit";
 
 /**
  * POST /api/planned-work/batch
@@ -95,6 +96,7 @@ export async function POST(request: NextRequest) {
 
     batchOp();
 
+    await logAudit("CREATE", "planned_work_batch", null, `Batch update for ${task_number}: ${created} created, ${removed} removed`);
     return NextResponse.json({
       message: "Batch planned work updated",
       peopleCount: people.length,
