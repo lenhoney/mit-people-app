@@ -27,12 +27,12 @@ export default async function RootLayout({
   const session = await auth0.getSession();
 
   return (
-    <html lang="en">
+    <html lang="en" className="dark" style={{ colorScheme: "dark" }}>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <Sidebar user={session?.user ?? null} />
-        <main className="ml-64 min-h-screen bg-background">
+        <main className="ml-64 min-h-screen">
           <div className="p-8">
             {children}
           </div>

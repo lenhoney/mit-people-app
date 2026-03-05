@@ -45,10 +45,10 @@ export function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r bg-sidebar border-sidebar-border">
-      <div className="flex h-16 items-center border-b border-sidebar-border px-5">
-        <Link href="/dashboard" className="flex items-center gap-3">
-          <span className="text-xl font-bold tracking-tight text-sidebar-foreground">Populus</span>
+    <aside className="fixed left-0 top-0 z-40 h-screen w-64 glass">
+      <div className="flex h-20 items-center justify-center border-b border-white/8 px-5">
+        <Link href="/dashboard" className="flex items-center">
+          <img src="/populus-logo.png" alt="Populus" className="h-16" />
         </Link>
       </div>
       <nav className="space-y-1 p-4">
@@ -61,8 +61,8 @@ export function Sidebar({ user }: SidebarProps) {
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  ? "bg-white/15 text-white border border-white/10"
+                  : "text-sidebar-foreground/70 hover:bg-white/8 hover:text-sidebar-accent-foreground"
               )}
             >
               <item.icon className="h-4 w-4" />
@@ -73,7 +73,7 @@ export function Sidebar({ user }: SidebarProps) {
       </nav>
 
       {user && (
-        <div className="absolute bottom-0 left-0 right-0 border-t border-sidebar-border p-4">
+        <div className="absolute bottom-0 left-0 right-0 border-t border-white/8 p-4">
           <div className="flex items-center gap-3 mb-3">
             {user.picture ? (
               <img

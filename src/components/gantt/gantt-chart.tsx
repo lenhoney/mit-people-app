@@ -857,7 +857,7 @@ export function GanttChart({ viewMode }: { viewMode: GanttViewMode }) {
           >
             {/* Header label cell */}
             <div
-              className="flex-shrink-0 border-r border-b bg-muted/50 flex items-center px-3 text-xs font-medium text-muted-foreground"
+              className="flex-shrink-0 border-r border-b border-white/8 bg-white/8 flex items-center px-3 text-xs font-medium text-foreground/70"
               style={{ width: LABEL_WIDTH, height: HEADER_HEIGHT }}
             >
               {viewMode === "project" ? "Project / Person" : "Person / Project"}
@@ -865,7 +865,7 @@ export function GanttChart({ viewMode }: { viewMode: GanttViewMode }) {
             {/* Header timeline — scroll synced */}
             <div
               ref={headerCanvasRef}
-              className="flex-1 overflow-hidden border-b bg-background"
+              className="flex-1 overflow-hidden border-b border-white/8"
               style={{ height: HEADER_HEIGHT }}
             >
               <svg
@@ -927,12 +927,12 @@ export function GanttChart({ viewMode }: { viewMode: GanttViewMode }) {
                     ? projectRows.map((row, i) => (
                         <div
                           key={i}
-                          className={`flex items-center px-3 border-b ${
+                          className={`flex items-center px-3 border-b border-white/5 ${
                             row.type === "group"
-                              ? "bg-muted/50 font-semibold"
+                              ? "bg-white/8 font-semibold"
                               : row.type === "project"
-                                ? "bg-muted/30 font-medium"
-                                : "bg-background"
+                                ? "bg-white/5 font-medium"
+                                : ""
                           }`}
                           style={{ height: ROW_HEIGHT }}
                         >
@@ -989,7 +989,7 @@ export function GanttChart({ viewMode }: { viewMode: GanttViewMode }) {
                                   </span>
                                 </div>
                               )}
-                              <span className="text-xs truncate text-muted-foreground">
+                              <span className="text-xs truncate text-foreground/85">
                                 {row.person.user_name}
                               </span>
                               <AllocationBadge
@@ -1002,10 +1002,10 @@ export function GanttChart({ viewMode }: { viewMode: GanttViewMode }) {
                     : peopleRows.map((row, i) => (
                         <div
                           key={i}
-                          className={`flex items-center px-3 border-b ${
+                          className={`flex items-center px-3 border-b border-white/5 ${
                             row.type === "person-parent"
-                              ? "bg-muted/30 font-medium"
-                              : "bg-background"
+                              ? "bg-white/5 font-medium"
+                              : ""
                           }`}
                           style={{ height: ROW_HEIGHT }}
                         >
@@ -1047,7 +1047,7 @@ export function GanttChart({ viewMode }: { viewMode: GanttViewMode }) {
                               />
                             </button>
                           ) : (
-                            <span className="text-xs truncate pl-5 text-muted-foreground">
+                            <span className="text-xs truncate pl-5 text-foreground/85">
                               {row.projectData.task_description}
                             </span>
                           )}
