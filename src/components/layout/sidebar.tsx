@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   Users,
+  Building2,
   FolderKanban,
   Clock,
   FileBarChart,
@@ -32,6 +33,7 @@ interface SidebarProps {
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/people", label: "People", icon: Users },
+  { href: "/business-units", label: "Business Units", icon: Building2 },
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/timesheets", label: "Timesheets", icon: Clock },
   { href: "/reports", label: "Reports", icon: FileBarChart },

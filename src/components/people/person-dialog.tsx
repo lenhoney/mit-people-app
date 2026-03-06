@@ -20,8 +20,6 @@ import {
 } from "@/components/ui/select";
 import { Camera, X, Plus } from "lucide-react";
 
-const BUSINESS_UNITS = ["GEL", "EUAM", "EUAF", "EUBR", "GS", "Advance", "Labs"];
-
 interface Country {
   id: number;
   name: string;
@@ -112,6 +110,7 @@ export function PersonDialog({ open, onOpenChange, person, onSave }: PersonDialo
   const [uploading, setUploading] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [countries, setCountries] = useState<Country[]>([]);
+  const [businessUnits, setBusinessUnits] = useState<{ id: number; short_name: string }[]>([]);
   const [addingCountry, setAddingCountry] = useState(false);
   const [newCountryName, setNewCountryName] = useState("");
   const [newCountryCode, setNewCountryCode] = useState("");
@@ -134,6 +133,10 @@ export function PersonDialog({ open, onOpenChange, person, onSave }: PersonDialo
     fetch("/api/countries")
       .then((res) => res.json())
       .then((data) => setCountries(data))
+      .catch(() => {});
+    fetch("/api/business-units")
+      .then((res) => res.json())
+      .then((data) => setBusinessUnits(data))
       .catch(() => {});
   }, []);
 
@@ -545,9 +548,9 @@ export function PersonDialog({ open, onOpenChange, person, onSave }: PersonDialo
                     <SelectValue placeholder="Select unit" />
                   </SelectTrigger>
                   <SelectContent>
-                    {BUSINESS_UNITS.map((unit) => (
-                      <SelectItem key={unit} value={unit}>
-                        {unit}
+                    {businessUnits.map((bu) => (
+                      <SelectItem key={bu.id} value={bu.short_name}>
+                        {bu.short_name}
                       </SelectItem>
                     ))}
                   </SelectContent>
