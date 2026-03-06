@@ -9,7 +9,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { task_number, task_description, group_label, budget, status, project_lead } = body;
+    const { task_number, task_description, group_label, budget, status, project_lead, client_id } = body;
 
     // Look up existing project
     const existing = db
@@ -47,6 +47,7 @@ export async function PUT(
           budget = ?,
           status = ?,
           project_lead = ?,
+          client_id = ?,
           updated_at = datetime('now')
         WHERE id = ?`
       ).run(
@@ -56,6 +57,7 @@ export async function PUT(
         budget != null && budget !== "" ? Number(budget) : null,
         status || "Started",
         project_lead || null,
+        client_id ?? null,
         id
       );
     });

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { Search, Download, ChevronDown, ChevronRight } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip } from "recharts";
+import { useClient } from "@/components/layout/client-provider";
 
 interface ProjectSummary {
   task_number: string;
@@ -76,6 +77,7 @@ export function ProjectReport() {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [sortField, setSortField] = useState<"revenue" | "total_hours" | "task_description">("revenue");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const { selectedClientId } = useClient();
 
   const handleSearch = async () => {
     if (!startDate || !endDate) return;
@@ -85,6 +87,7 @@ export function ProjectReport() {
     try {
       const params = new URLSearchParams({ startDate, endDate });
       if (projectFilter) params.set("project", projectFilter);
+      if (selectedClientId) params.set("clientId", String(selectedClientId));
 
       const res = await fetch(`/api/reports/projects?${params}`);
       const data = await res.json();

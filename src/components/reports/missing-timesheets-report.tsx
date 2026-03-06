@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, FileDown, ClipboardList, AlertTriangle } from "lucide-react";
+import { useClient } from "@/components/layout/client-provider";
 
 // ── Missing Timesheets types ──────────────────────────────────────────────
 interface TimesheetRow {
@@ -78,6 +79,7 @@ export function MissingTimesheetsReport() {
 
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const { selectedClientId } = useClient();
 
   const handleSearch = async () => {
     if (!startDate || !endDate) return;
@@ -87,6 +89,7 @@ export function MissingTimesheetsReport() {
     try {
       const params = new URLSearchParams({ startDate, endDate });
       if (personFilter) params.set("person", personFilter);
+      if (selectedClientId) params.set("clientId", String(selectedClientId));
 
       const [missingRes, overtimeRes] = await Promise.all([
         fetch(`/api/reports/missing-timesheets?${params}`),

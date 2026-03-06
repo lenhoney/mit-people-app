@@ -9,12 +9,13 @@ export async function GET(request: NextRequest) {
     const category = searchParams.get("category");
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
+    const clientId = searchParams.get("clientId");
     const page = parseInt(searchParams.get("page") || "1");
     const pageSize = parseInt(searchParams.get("pageSize") || "50");
 
     let query = "SELECT * FROM timesheets WHERE 1=1";
     let countQuery = "SELECT COUNT(*) as total FROM timesheets WHERE 1=1";
-    const params: Record<string, string> = {};
+    const params: Record<string, string | number> = {};
 
     if (user) {
       query += " AND user_name LIKE @user";
@@ -40,6 +41,11 @@ export async function GET(request: NextRequest) {
       query += " AND week_starts_on <= @endDate";
       countQuery += " AND week_starts_on <= @endDate";
       params.endDate = endDate;
+    }
+    if (clientId) {
+      query += " AND task_number IN (SELECT task_number FROM projects WHERE client_id = @clientId)";
+      countQuery += " AND task_number IN (SELECT task_number FROM projects WHERE client_id = @clientId)";
+      params.clientId = Number(clientId);
     }
 
     const totalRow = db.prepare(countQuery).get(params) as { total: number };

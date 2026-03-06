@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useClient } from "@/components/layout/client-provider";
 import { RevenueCards } from "@/components/dashboard/revenue-card";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { MissingTimesheets } from "@/components/dashboard/missing-timesheets";
@@ -77,9 +78,12 @@ interface DashboardData {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const { selectedClientId } = useClient();
 
   useEffect(() => {
-    fetch("/api/dashboard")
+    const params = new URLSearchParams();
+    if (selectedClientId) params.set("clientId", String(selectedClientId));
+    fetch(`/api/dashboard?${params}`)
       .then((res) => res.json())
       .then((d) => {
         setData(d);
@@ -89,7 +93,7 @@ export default function DashboardPage() {
         console.error("Failed to load dashboard:", err);
         setLoading(false);
       });
-  }, []);
+  }, [selectedClientId]);
 
   if (loading) {
     return (

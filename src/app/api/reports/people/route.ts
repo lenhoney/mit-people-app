@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
     const person = searchParams.get("person");
+    const clientId = searchParams.get("clientId");
 
     if (!startDate || !endDate) {
       return NextResponse.json(
@@ -36,6 +37,10 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const clientFilter = clientId
+      ? " AND t.task_number IN (SELECT task_number FROM projects WHERE client_id = @clientId)"
+      : "";
 
     let query = `
       SELECT
@@ -51,9 +56,13 @@ export async function GET(request: NextRequest) {
         AND t.week_starts_on <= pr.fy_end
       WHERE t.category = 'Project'
         AND ${WEEK_OVERLAP_FILTER}
+        ${clientFilter}
     `;
 
-    const params: Record<string, string> = { startDate, endDate };
+    const params: Record<string, string | number> = { startDate, endDate };
+    if (clientId) {
+      params.clientId = Number(clientId);
+    }
 
     if (person) {
       query += " AND t.user_name LIKE @person";
@@ -80,6 +89,7 @@ export async function GET(request: NextRequest) {
         AND t.week_starts_on <= pr.fy_end
       WHERE t.category = 'Project'
         AND ${WEEK_OVERLAP_FILTER}
+        ${clientFilter}
     `;
 
     if (person) {

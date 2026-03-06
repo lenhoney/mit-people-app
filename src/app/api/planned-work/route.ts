@@ -9,11 +9,22 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const viewBy = searchParams.get("viewBy") || "project";
+    const clientId = searchParams.get("clientId");
 
     const orderClause =
       viewBy === "person"
         ? "ORDER BY p.person, pw.task_number"
         : "ORDER BY pw.task_number, p.person";
+
+    const clientJoin = clientId
+      ? "JOIN projects proj ON pw.task_number = proj.task_number"
+      : "";
+    const clientFilter = clientId
+      ? "WHERE proj.client_id = @clientId"
+      : "";
+    const clientParams: Record<string, number> = clientId
+      ? { clientId: Number(clientId) }
+      : {};
 
     const rows = db
       .prepare(
@@ -23,9 +34,11 @@ export async function GET(request: NextRequest) {
                 p.person as person_name
          FROM planned_work pw
          JOIN people p ON pw.person_id = p.id
+         ${clientJoin}
+         ${clientFilter}
          ${orderClause}`
       )
-      .all();
+      .all(clientParams);
 
     return NextResponse.json(rows);
   } catch (error) {

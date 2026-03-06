@@ -19,6 +19,7 @@ import {
   format,
   parseISO,
 } from "date-fns";
+import { useClient } from "@/components/layout/client-provider";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -397,6 +398,7 @@ export function GanttChart({ viewMode }: { viewMode: GanttViewMode }) {
     end: string;
   } | null>(null);
   const [loading, setLoading] = useState(true);
+  const { selectedClientId } = useClient();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [projectFilter, setProjectFilter] = useState("");
   const [personFilter, setPersonFilter] = useState("");
@@ -424,12 +426,16 @@ export function GanttChart({ viewMode }: { viewMode: GanttViewMode }) {
     setLoading(true);
     try {
       if (viewMode === "project") {
-        const res = await fetch("/api/gantt");
+        const params = new URLSearchParams();
+        if (selectedClientId) params.set("clientId", String(selectedClientId));
+        const res = await fetch(`/api/gantt?${params}`);
         const data = await res.json();
         setProjects(data.projects || []);
         setDateRange(data.dateRange || null);
       } else {
-        const res = await fetch("/api/gantt?view=people");
+        const params = new URLSearchParams({ view: "people" });
+        if (selectedClientId) params.set("clientId", String(selectedClientId));
+        const res = await fetch(`/api/gantt?${params}`);
         const data = await res.json();
         setPeople(data.people || []);
         setDateRange(data.dateRange || null);
@@ -439,7 +445,7 @@ export function GanttChart({ viewMode }: { viewMode: GanttViewMode }) {
     } finally {
       setLoading(false);
     }
-  }, [viewMode]);
+  }, [viewMode, selectedClientId]);
 
   useEffect(() => {
     setExpandedItems(new Set());

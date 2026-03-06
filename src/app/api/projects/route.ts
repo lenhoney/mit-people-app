@@ -2,15 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const projects = db
-      .prepare(
-        `SELECT id, task_number, task_description, group_label, budget, COALESCE(status, 'Started') as status, project_lead, created_at, updated_at
-         FROM projects
-         ORDER BY COALESCE(group_label, 'zzz') ASC, task_description ASC, task_number ASC`
-      )
-      .all();
+    const clientId = request.nextUrl.searchParams.get("clientId");
+
+    let query = `SELECT id, task_number, task_description, group_label, budget, COALESCE(status, 'Started') as status, project_lead, client_id, created_at, updated_at
+         FROM projects`;
+    const params: unknown[] = [];
+
+    if (clientId) {
+      query += ` WHERE client_id = ?`;
+      params.push(clientId);
+    }
+
+    query += ` ORDER BY COALESCE(group_label, 'zzz') ASC, task_description ASC, task_number ASC`;
+
+    const projects = db.prepare(query).all(...params);
 
     return NextResponse.json(projects);
   } catch (error) {
@@ -25,7 +32,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { task_number, task_description, group_label, budget, project_lead } = body;
+    const { task_number, task_description, group_label, budget, project_lead, client_id } = body;
 
     if (!task_number) {
       return NextResponse.json(
@@ -35,8 +42,8 @@ export async function POST(request: NextRequest) {
     }
 
     const stmt = db.prepare(`
-      INSERT INTO projects (task_number, task_description, group_label, budget, project_lead)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO projects (task_number, task_description, group_label, budget, project_lead, client_id)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -44,7 +51,8 @@ export async function POST(request: NextRequest) {
       task_description || null,
       group_label || null,
       budget != null && budget !== "" ? Number(budget) : null,
-      project_lead || null
+      project_lead || null,
+      client_id ?? null
     );
 
     await logAudit("CREATE", "project", result.lastInsertRowid, `Created project: ${task_number}`);

@@ -11,6 +11,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useClient } from "@/components/layout/client-provider";
 
 export interface ProjectData {
   id?: number;
@@ -20,6 +22,7 @@ export interface ProjectData {
   budget: number | null;
   status?: string;
   project_lead: string | null;
+  client_id: number | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -39,6 +42,7 @@ const emptyProject: ProjectData = {
   group_label: null,
   budget: null,
   project_lead: null,
+  client_id: null,
 };
 
 export function ProjectDialog({
@@ -55,8 +59,18 @@ export function ProjectDialog({
   const [error, setError] = useState("");
   const [showGroupSuggestions, setShowGroupSuggestions] = useState(false);
   const [showLeadSuggestions, setShowLeadSuggestions] = useState(false);
+  const [clients, setClients] = useState<{id: number; short_name: string; name: string}[]>([]);
+
+  const { selectedClientId } = useClient();
 
   const isEditing = !!project?.id;
+
+  useEffect(() => {
+    fetch("/api/clients")
+      .then((res) => res.json())
+      .then((data) => setClients(data))
+      .catch((err) => console.error("Failed to load clients:", err));
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -64,12 +78,12 @@ export function ProjectDialog({
         setFormData(project);
         setBudgetStr(project.budget != null ? String(project.budget) : "");
       } else {
-        setFormData(emptyProject);
+        setFormData({ ...emptyProject, client_id: selectedClientId });
         setBudgetStr("");
       }
       setError("");
     }
-  }, [open, project]);
+  }, [open, project, selectedClientId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,6 +103,7 @@ export function ProjectDialog({
         budget: budgetStr ? Number(budgetStr) : null,
         status: formData.status || "Started",
         project_lead: formData.project_lead?.trim() || null,
+        client_id: formData.client_id,
       };
 
       const url = isEditing
@@ -149,6 +164,27 @@ export function ProjectDialog({
                 {error}
               </div>
             )}
+
+            <div className="space-y-2">
+              <Label htmlFor="client_id">Client</Label>
+              <Select
+                value={formData.client_id != null ? String(formData.client_id) : ""}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, client_id: value ? Number(value) : null })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a client..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map((client) => (
+                    <SelectItem key={client.id} value={String(client.id)}>
+                      {client.short_name} - {client.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             <div className="space-y-2">
               <Label htmlFor="task_number">Project Code *</Label>

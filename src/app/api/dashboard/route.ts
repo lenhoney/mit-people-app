@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import db, { cleanupPlannedWork } from "@/lib/db";
 
 interface RevenueRow {
@@ -147,10 +147,16 @@ function plannedBusinessDaysInMonth(
   return businessDaysBetween(overlapStart, overlapEnd);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     // Clean up past-dated planned work before calculating
     cleanupPlannedWork();
+
+    const clientId = request.nextUrl.searchParams.get("clientId");
+    const clientRevenueFilter = clientId
+      ? " AND t.task_number IN (SELECT task_number FROM projects WHERE client_id = @clientId)"
+      : "";
+    const clientIdParam = clientId ? Number(clientId) : null;
 
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -162,13 +168,19 @@ export async function GET() {
     const currentMonthLastDay = new Date(currentYear, currentMonth, 0).getDate();
     const currentMonthEnd = `${currentMonthStr}-${String(currentMonthLastDay).padStart(2, "0")}`;
 
+    const currentMonthRevenueParams: Record<string, string | number> = {
+      monthStart: currentMonthStart,
+      monthEnd: currentMonthEnd,
+    };
+    if (clientIdParam !== null) currentMonthRevenueParams.clientId = clientIdParam;
+
     const currentMonthRevenue = db
       .prepare(
         `SELECT COALESCE(SUM(${DAY_HOURS_FOR_MONTH_SQL} * COALESCE(pr.rate, 0)), 0) as revenue
          ${REVENUE_JOIN}
-         WHERE t.category = 'Project' AND ${MONTH_OVERLAP_FILTER}`
+         WHERE t.category = 'Project' AND ${MONTH_OVERLAP_FILTER}${clientRevenueFilter}`
       )
-      .get({ monthStart: currentMonthStart, monthEnd: currentMonthEnd }) as { revenue: number };
+      .get(currentMonthRevenueParams) as { revenue: number };
 
     // ── Revenue FYTD (Financial Year To Date) ────────────────────────────
     // Epi-Use FY runs 1 March to 28/29 Feb
@@ -193,7 +205,7 @@ export async function GET() {
       const fytdRevenueStmt = db.prepare(
         `SELECT COALESCE(SUM(${DAY_HOURS_FOR_MONTH_SQL} * COALESCE(pr.rate, 0)), 0) as revenue
          ${REVENUE_JOIN}
-         WHERE t.category = 'Project' AND ${MONTH_OVERLAP_FILTER}`
+         WHERE t.category = 'Project' AND ${MONTH_OVERLAP_FILTER}${clientRevenueFilter}`
       );
 
       for (const month of fyMonths) {
@@ -207,7 +219,9 @@ export async function GET() {
           const mLastDay = new Date(my, mm, 0).getDate();
           mEnd = `${month}-${String(mLastDay).padStart(2, "0")}`;
         }
-        const row = fytdRevenueStmt.get({ monthStart: mStart, monthEnd: mEnd }) as { revenue: number };
+        const fytdParams: Record<string, string | number> = { monthStart: mStart, monthEnd: mEnd };
+        if (clientIdParam !== null) fytdParams.clientId = clientIdParam;
+        const row = fytdRevenueStmt.get(fytdParams) as { revenue: number };
         revenueFYTD += row.revenue;
       }
       revenueFYTD = Math.round(revenueFYTD * 100) / 100;
@@ -228,9 +242,15 @@ export async function GET() {
     }
 
     // Find the maximum planned_end date from the planned_work table
-    const maxPlannedEndRow = db
-      .prepare("SELECT MAX(planned_end) as max_end FROM planned_work")
-      .get() as { max_end: string | null };
+    // When clientId is provided, only consider planned work for this client's projects
+    const maxPlannedEndQuery = clientId
+      ? `SELECT MAX(pw.planned_end) as max_end FROM planned_work pw
+         JOIN projects proj ON pw.task_number = proj.task_number
+         WHERE proj.client_id = ?`
+      : "SELECT MAX(planned_end) as max_end FROM planned_work";
+    const maxPlannedEndRow = clientId
+      ? db.prepare(maxPlannedEndQuery).get(clientIdParam) as { max_end: string | null }
+      : db.prepare(maxPlannedEndQuery).get() as { max_end: string | null };
 
     if (maxPlannedEndRow.max_end) {
       const maxEnd = maxPlannedEndRow.max_end;
@@ -257,7 +277,7 @@ export async function GET() {
     const monthlyRevenueStmt = db.prepare(
       `SELECT COALESCE(SUM(${DAY_HOURS_FOR_MONTH_SQL} * COALESCE(pr.rate, 0)), 0) as revenue
        ${REVENUE_JOIN}
-       WHERE t.category = 'Project' AND ${MONTH_OVERLAP_FILTER}`
+       WHERE t.category = 'Project' AND ${MONTH_OVERLAP_FILTER}${clientRevenueFilter}`
     );
 
     const actualByMonth = new Map<string, number>();
@@ -266,7 +286,9 @@ export async function GET() {
       const mStart = `${month}-01`;
       const mLastDay = new Date(my, mm, 0).getDate();
       const mEnd = `${month}-${String(mLastDay).padStart(2, "0")}`;
-      const row = monthlyRevenueStmt.get({ monthStart: mStart, monthEnd: mEnd }) as { revenue: number };
+      const monthParams: Record<string, string | number> = { monthStart: mStart, monthEnd: mEnd };
+      if (clientIdParam !== null) monthParams.clientId = clientIdParam;
+      const row = monthlyRevenueStmt.get(monthParams) as { revenue: number };
       actualByMonth.set(month, Math.round(row.revenue * 100) / 100);
     }
 
@@ -278,13 +300,20 @@ export async function GET() {
     const [ly, lm] = lastMonth.split("-").map(Number);
     const windowEnd = `${ly}-${String(lm).padStart(2, "0")}-31`;
 
-    const plannedRows = db
-      .prepare(
-        `SELECT pw.person_id, pw.planned_start, pw.planned_end, pw.allocation_pct
+    // When clientId is provided, only include planned work for this client's projects
+    const plannedWorkQuery = clientId
+      ? `SELECT pw.person_id, pw.planned_start, pw.planned_end, pw.allocation_pct
          FROM planned_work pw
-         WHERE pw.planned_end >= ? AND pw.planned_start <= ?`
-      )
-      .all(windowStart, windowEnd) as PlannedWorkRow[];
+         JOIN projects proj ON pw.task_number = proj.task_number
+         WHERE pw.planned_end >= ? AND pw.planned_start <= ?
+           AND proj.client_id = ?`
+      : `SELECT pw.person_id, pw.planned_start, pw.planned_end, pw.allocation_pct
+         FROM planned_work pw
+         WHERE pw.planned_end >= ? AND pw.planned_start <= ?`;
+
+    const plannedRows = clientId
+      ? db.prepare(plannedWorkQuery).all(windowStart, windowEnd, clientIdParam) as PlannedWorkRow[]
+      : db.prepare(plannedWorkQuery).all(windowStart, windowEnd) as PlannedWorkRow[];
 
     // Get rates for these people that overlap the window
     const rateStmt = db.prepare(
@@ -431,17 +460,41 @@ export async function GET() {
 
     // Top 10 people who haven't booked timesheets for the current month
     // Missing timesheets: only check active people (day-level precision)
+    // When clientId is provided, scope to people who have projects for this client
+    const clientMissingPeopleFilter = clientId
+      ? `AND p.id IN (
+           SELECT DISTINCT pw2.person_id FROM planned_work pw2
+           JOIN projects proj2 ON pw2.task_number = proj2.task_number
+           WHERE proj2.client_id = @clientId
+           UNION
+           SELECT DISTINCT p2.id FROM people p2
+           JOIN timesheets t2 ON t2.user_name = p2.person
+           JOIN projects proj2 ON t2.task_number = proj2.task_number
+           WHERE proj2.client_id = @clientId
+         )`
+      : "";
+    const clientMissingTimesheetFilter = clientId
+      ? " AND t.task_number IN (SELECT task_number FROM projects WHERE client_id = @clientId)"
+      : "";
+    const missingParams: Record<string, string | number> = {
+      monthStart: currentMonthStart,
+      monthEnd: currentMonthEnd,
+    };
+    if (clientIdParam !== null) missingParams.clientId = clientIdParam;
+
     const missingTimesheets = db
       .prepare(
         `SELECT p.person, p.role, p.sow, p.photo
          FROM people p
          WHERE COALESCE(p.status, 'Active') = 'Active'
+           ${clientMissingPeopleFilter}
            AND p.person NOT IN (
              SELECT DISTINCT t.user_name
              FROM timesheets t
              WHERE date(t.week_starts_on, '+6 days') >= @monthStart
                AND t.week_starts_on <= @monthEnd
                AND t.category = 'Project'
+               ${clientMissingTimesheetFilter}
                AND (
                  CASE WHEN date(t.week_starts_on, '+0 days') BETWEEN @monthStart AND @monthEnd THEN t.sunday ELSE 0 END +
                  CASE WHEN date(t.week_starts_on, '+1 days') BETWEEN @monthStart AND @monthEnd THEN t.monday ELSE 0 END +
@@ -455,7 +508,7 @@ export async function GET() {
          ORDER BY p.person ASC
          LIMIT 10`
       )
-      .all({ monthStart: currentMonthStart, monthEnd: currentMonthEnd }) as MissingPerson[];
+      .all(missingParams) as MissingPerson[];
 
     // ── Bench risk: people without sufficient planned work 2+ months out ────
     // The horizon date is 2 months from today
@@ -463,39 +516,74 @@ export async function GET() {
     const horizonStr = horizonDate.toISOString().slice(0, 10);
 
     // Get all active people (exclude Not Active from bench risk)
+    // When clientId is provided, only include people who have projects for this client
+    const clientBenchPeopleFilter = clientId
+      ? `AND p.id IN (
+           SELECT DISTINCT pw2.person_id FROM planned_work pw2
+           JOIN projects proj2 ON pw2.task_number = proj2.task_number
+           WHERE proj2.client_id = ?
+           UNION
+           SELECT DISTINCT p2.id FROM people p2
+           JOIN timesheets t2 ON t2.user_name = p2.person
+           JOIN projects proj2 ON t2.task_number = proj2.task_number
+           WHERE proj2.client_id = ?
+         )`
+      : "";
+
+    const allPeopleParams = clientId
+      ? [clientIdParam, clientIdParam]
+      : [];
+
     const allPeople = db
       .prepare(
         `SELECT p.id as person_id, p.person, p.role, p.sow, p.photo
          FROM people p
          WHERE COALESCE(p.status, 'Active') = 'Active'
+         ${clientBenchPeopleFilter}
          ORDER BY p.person ASC`
       )
-      .all() as { person_id: number; person: string; role: string | null; sow: string | null; photo: string | null }[];
+      .all(...allPeopleParams) as { person_id: number; person: string; role: string | null; sow: string | null; photo: string | null }[];
 
     // For each person, sum allocation_pct of planned work entries that extend beyond the horizon
-    // i.e. entries where planned_end > horizonStr
+    // When clientId is provided, only count planned work for this client's projects
+    const clientBenchAllocFilter = clientId
+      ? " AND pw.task_number IN (SELECT task_number FROM projects WHERE client_id = ?)"
+      : "";
     const personAllocStmt = db.prepare(
       `SELECT COALESCE(SUM(pw.allocation_pct), 0) as total_alloc,
               MAX(pw.planned_end) as latest_end
        FROM planned_work pw
-       WHERE pw.person_id = ? AND pw.planned_end > ?`
+       WHERE pw.person_id = ? AND pw.planned_end > ?${clientBenchAllocFilter}`
     );
 
     // Also get the absolute latest planned_end for each person (regardless of horizon)
-    const personPlannedToStmt = db.prepare(
-      `SELECT MAX(pw.planned_end) as planned_to
-       FROM planned_work pw
-       WHERE pw.person_id = ?`
-    );
+    const personPlannedToStmt = clientId
+      ? db.prepare(
+          `SELECT MAX(pw.planned_end) as planned_to
+           FROM planned_work pw
+           JOIN projects proj ON pw.task_number = proj.task_number
+           WHERE pw.person_id = ? AND proj.client_id = ?`
+        )
+      : db.prepare(
+          `SELECT MAX(pw.planned_end) as planned_to
+           FROM planned_work pw
+           WHERE pw.person_id = ?`
+        );
 
     const benchRisk: BenchRiskPerson[] = [];
     for (const p of allPeople) {
-      const row = personAllocStmt.get(p.person_id, horizonStr) as {
+      const allocParams = clientId
+        ? [p.person_id, horizonStr, clientIdParam]
+        : [p.person_id, horizonStr];
+      const row = personAllocStmt.get(...allocParams) as {
         total_alloc: number;
         latest_end: string | null;
       };
       if (row.total_alloc < 50) {
-        const plannedToRow = personPlannedToStmt.get(p.person_id) as {
+        const plannedToParams = clientId
+          ? [p.person_id, clientIdParam]
+          : [p.person_id];
+        const plannedToRow = personPlannedToStmt.get(...plannedToParams) as {
           planned_to: string | null;
         };
         benchRisk.push({
@@ -524,7 +612,12 @@ export async function GET() {
 
     // ── Project Budget Health ──────────────────────────────────────────────
     // For all projects with budget > 0, compute how much has been billed
-    // (timesheet hours × person rate) and compare against budget.
+    // (timesheet hours x person rate) and compare against budget.
+    const clientBudgetFilter = clientId
+      ? " AND proj.client_id = ?"
+      : "";
+    const budgetParams = clientId ? [clientIdParam] : [];
+
     const budgetHealthRows = db
       .prepare(
         `SELECT
@@ -541,10 +634,11 @@ export async function GET() {
            AND t.week_starts_on <= pr.fy_end
          WHERE proj.budget IS NOT NULL AND proj.budget > 0
            AND COALESCE(proj.status, 'Started') = 'Started'
+           ${clientBudgetFilter}
          GROUP BY proj.id, proj.task_number, proj.task_description, proj.budget
          ORDER BY proj.task_description ASC`
       )
-      .all() as {
+      .all(...budgetParams) as {
         id: number;
         task_number: string;
         task_description: string | null;
@@ -572,7 +666,7 @@ export async function GET() {
       };
     });
 
-    // ── Upcoming PTO: next 2 weeks from today ────────────────────────────
+    // ── Upcoming PTO: next 2 weeks from today (UNFILTERED - people-based) ──
     const todayStr = now.toISOString().slice(0, 10);
     const twoWeeksOut = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 14);
     const twoWeeksStr = twoWeeksOut.toISOString().slice(0, 10);
@@ -599,7 +693,7 @@ export async function GET() {
         photo: string | null;
       }[];
 
-    // ── Birthday Reminders: all birthdays this month ─────────────────────
+    // ── Birthday Reminders: all birthdays this month (UNFILTERED) ─────────
     const todayMMDD = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const tomorrowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
     const tomorrowMMDD = `${String(tomorrowDate.getMonth() + 1).padStart(2, "0")}-${String(tomorrowDate.getDate()).padStart(2, "0")}`;
@@ -629,7 +723,7 @@ export async function GET() {
           : "this_month" as const,
     }));
 
-    // ── Work Anniversaries: people whose anniversary month is this month ──
+    // ── Work Anniversaries: people whose anniversary month is this month (UNFILTERED) ──
     const currentMonthPadded = String(now.getMonth() + 1).padStart(2, "0");
     const anniversaryRows = db
       .prepare(

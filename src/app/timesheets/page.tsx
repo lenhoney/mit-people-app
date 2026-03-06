@@ -13,6 +13,7 @@ import {
 import { TimesheetsTable } from "@/components/timesheets/timesheets-table";
 import { TimesheetsUploadDialog } from "@/components/timesheets/upload-dialog";
 import { Upload, Search, X } from "lucide-react";
+import { useClient } from "@/components/layout/client-provider";
 
 interface Timesheet {
   id: number;
@@ -53,6 +54,7 @@ export default function TimesheetsPage() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const { selectedClientId } = useClient();
 
   const loadTimesheets = useCallback(async (page = 1) => {
     setLoading(true);
@@ -63,6 +65,7 @@ export default function TimesheetsPage() {
       if (categoryFilter && categoryFilter !== "all") params.set("category", categoryFilter);
       if (startDate) params.set("startDate", startDate);
       if (endDate) params.set("endDate", endDate);
+      if (selectedClientId) params.set("clientId", String(selectedClientId));
 
       const res = await fetch(`/api/timesheets?${params}`);
       const data = await res.json();
@@ -73,7 +76,7 @@ export default function TimesheetsPage() {
     } finally {
       setLoading(false);
     }
-  }, [userFilter, projectFilter, categoryFilter, startDate, endDate]);
+  }, [userFilter, projectFilter, categoryFilter, startDate, endDate, selectedClientId]);
 
   useEffect(() => {
     loadTimesheets(1);

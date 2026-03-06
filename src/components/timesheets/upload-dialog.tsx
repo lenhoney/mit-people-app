@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,14 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Upload } from "lucide-react";
+import { useClient } from "@/components/layout/client-provider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface UploadDialogProps {
   open: boolean;
@@ -31,6 +39,14 @@ export function TimesheetsUploadDialog({ open, onOpenChange, onUploadComplete }:
   const [result, setResult] = useState<UploadResult | null>(null);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const { clients, selectedClientId } = useClient();
+  const [clientId, setClientId] = useState<string>("");
+
+  useEffect(() => {
+    if (selectedClientId) {
+      setClientId(String(selectedClientId));
+    }
+  }, [selectedClientId]);
 
   const handleUpload = async () => {
     const file = fileRef.current?.files?.[0];
@@ -46,6 +62,9 @@ export function TimesheetsUploadDialog({ open, onOpenChange, onUploadComplete }:
     try {
       const formData = new FormData();
       formData.append("file", file);
+      if (clientId) {
+        formData.append("clientId", clientId);
+      }
 
       const res = await fetch("/api/timesheets/upload", {
         method: "POST",
@@ -71,6 +90,7 @@ export function TimesheetsUploadDialog({ open, onOpenChange, onUploadComplete }:
     setResult(null);
     setError("");
     if (fileRef.current) fileRef.current.value = "";
+    if (selectedClientId) setClientId(String(selectedClientId));
     onOpenChange(false);
   };
 
@@ -86,6 +106,22 @@ export function TimesheetsUploadDialog({ open, onOpenChange, onUploadComplete }:
             already in the People table will be imported. Existing entries will be updated
             using week start date + user + task number as key.
           </p>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Client</label>
+            <Select value={clientId} onValueChange={setClientId}>
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Select client for new projects" />
+              </SelectTrigger>
+              <SelectContent>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.short_name} - {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="flex items-center gap-2">
             <input

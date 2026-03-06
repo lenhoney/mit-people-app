@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Users,
   Building2,
+  Handshake,
   FolderKanban,
   Clock,
   FileBarChart,
@@ -16,6 +17,8 @@ import {
   ScrollText,
   LogOut,
 } from "lucide-react";
+import { useClient } from "./client-provider";
+import { ClientSelector } from "./client-selector";
 
 interface SidebarUser {
   sub: string;
@@ -34,6 +37,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/people", label: "People", icon: Users },
   { href: "/business-units", label: "Business Units", icon: Building2 },
+  { href: "/clients", label: "Clients", icon: Handshake },
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/timesheets", label: "Timesheets", icon: Clock },
   { href: "/reports", label: "Reports", icon: FileBarChart },
@@ -45,13 +49,24 @@ const navItems = [
 
 export function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
+  const { selectedClient } = useClient();
 
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 glass">
-      <div className="flex h-20 items-center justify-center border-b border-white/8 px-5">
-        <Link href="/dashboard" className="flex items-center">
-          <img src="/populus-logo.png" alt="Populus" className="h-16" />
+      <div className="flex flex-col items-center justify-center border-b border-white/8 px-5 py-3">
+        <Link href="/dashboard" className="flex items-center gap-2">
+          <img src="/populus-logo.png" alt="Populus" className="h-12" />
+          {selectedClient?.logo && (
+            <img
+              src={`/api/client-logos/${selectedClient.logo}`}
+              alt={selectedClient.short_name}
+              className="h-10 rounded object-contain"
+            />
+          )}
         </Link>
+        <div className="w-full mt-2">
+          <ClientSelector />
+        </div>
       </div>
       <nav className="space-y-1 p-4">
         {navItems.map((item) => {

@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
     const person = searchParams.get("person");
+    const clientId = searchParams.get("clientId");
 
     if (!startDate || !endDate) {
       return NextResponse.json(
@@ -42,6 +43,25 @@ export async function GET(request: NextRequest) {
     }
     const expectedHours = expectedBusinessDays * 8;
 
+    // When clientId is provided, only show people who have projects for this client
+    const clientPeopleFilter = clientId
+      ? `AND p.id IN (
+           SELECT DISTINCT pw2.person_id FROM planned_work pw2
+           JOIN projects proj2 ON pw2.task_number = proj2.task_number
+           WHERE proj2.client_id = @clientId
+           UNION
+           SELECT DISTINCT p2.id FROM people p2
+           JOIN timesheets t2 ON t2.user_name = p2.person
+           JOIN projects proj2 ON t2.task_number = proj2.task_number
+           WHERE proj2.client_id = @clientId
+         )`
+      : "";
+
+    // When clientId is provided, only count hours for projects belonging to this client
+    const clientTimesheetFilter = clientId
+      ? " AND t.task_number IN (SELECT task_number FROM projects WHERE client_id = @clientId)"
+      : "";
+
     // Get all active people with their total logged hours for the date range
     let query = `
       SELECT
@@ -56,14 +76,19 @@ export async function GET(request: NextRequest) {
           SUM(${DAY_HOURS_SQL}) as total_hours
         FROM timesheets t
         WHERE ${WEEK_OVERLAP_FILTER}
+          ${clientTimesheetFilter}
         GROUP BY t.user_name
         HAVING total_hours > 0
       ) hours ON hours.user_name = p.person
       WHERE COALESCE(p.status, 'Active') = 'Active'
         AND p.person NOT IN ('Dudley Kirkpatrick', 'Steven Petsinger', 'Terence Jordan', 'Werner Swiegers', 'Arno Grobler', 'Irene van der Walt', 'Johan le Roux', 'Avinash Mohan', 'Eric Abraham', 'Jay Santos')
+        ${clientPeopleFilter}
     `;
 
-    const params: Record<string, string> = { startDate, endDate };
+    const params: Record<string, string | number> = { startDate, endDate };
+    if (clientId) {
+      params.clientId = Number(clientId);
+    }
 
     if (person) {
       query += " AND p.person LIKE @person";

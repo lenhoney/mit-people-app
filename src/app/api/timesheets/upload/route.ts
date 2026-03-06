@@ -7,6 +7,7 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File;
+    const clientId = formData.get("clientId") as string | null;
 
     if (!file) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
@@ -43,8 +44,10 @@ export async function POST(request: NextRequest) {
 
     // Prepared statement to auto-create projects
     const projectUpsertStmt = db.prepare(`
-      INSERT OR IGNORE INTO projects (task_number, task_description)
-      VALUES (?, ?)
+      INSERT INTO projects (task_number, task_description, client_id)
+      VALUES (?, ?, ?)
+      ON CONFLICT(task_number) DO UPDATE SET
+        client_id = COALESCE(projects.client_id, excluded.client_id)
     `);
 
     const transaction = db.transaction(() => {
@@ -65,7 +68,7 @@ export async function POST(request: NextRequest) {
           !seenProjects.has(row.task_number)
         ) {
           seenProjects.add(row.task_number);
-          projectUpsertStmt.run(row.task_number, row.task_description || null);
+          projectUpsertStmt.run(row.task_number, row.task_description || null, clientId ? Number(clientId) : null);
         }
 
         // Check if record exists (use COALESCE to handle NULL task_number/category)

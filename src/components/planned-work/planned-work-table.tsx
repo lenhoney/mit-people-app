@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Pencil, Trash2, Check, X, Search, UserPlus } from "lucide-react";
 import { AssignPersonDialog } from "./assign-person-dialog";
+import { useClient } from "@/components/layout/client-provider";
 
 interface PlannedWorkEntry {
   id: number;
@@ -37,6 +38,7 @@ export function PlannedWorkTable() {
 
   // Assign dialog state
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const { selectedClientId } = useClient();
 
   // Edit state
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -47,7 +49,9 @@ export function PlannedWorkTable() {
   const loadData = useCallback(async (view: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/planned-work?viewBy=${view}`);
+      const params = new URLSearchParams({ viewBy: view });
+      if (selectedClientId) params.set("clientId", String(selectedClientId));
+      const res = await fetch(`/api/planned-work?${params}`);
       const data = await res.json();
       setEntries(data);
     } catch (err) {
@@ -55,7 +59,7 @@ export function PlannedWorkTable() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedClientId]);
 
   useEffect(() => {
     loadData(viewBy);

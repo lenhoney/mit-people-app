@@ -8,6 +8,7 @@ import {
   ProjectData,
 } from "@/components/projects/project-dialog";
 import { FolderPlus } from "lucide-react";
+import { useClient } from "@/components/layout/client-provider";
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectData[]>([]);
@@ -18,9 +19,11 @@ export default function ProjectsPage() {
     null
   );
 
+  const { selectedClientId } = useClient();
+
   const loadProjects = useCallback(async () => {
     try {
-      const res = await fetch("/api/projects");
+      const res = await fetch(`/api/projects?clientId=${selectedClientId}`);
       const data = await res.json();
       setProjects(data);
     } catch (err) {
@@ -28,7 +31,7 @@ export default function ProjectsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedClientId]);
 
   const loadPeopleNames = useCallback(async () => {
     try {
@@ -47,7 +50,7 @@ export default function ProjectsPage() {
   useEffect(() => {
     loadProjects();
     loadPeopleNames();
-  }, [loadProjects, loadPeopleNames]);
+  }, [loadProjects, loadPeopleNames, selectedClientId]);
 
   const handleEdit = (project: ProjectData) => {
     setEditingProject(project);

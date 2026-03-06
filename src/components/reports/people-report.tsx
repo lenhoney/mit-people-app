@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { useClient } from "@/components/layout/client-provider";
 import { Search, Download, ChevronDown, ChevronRight } from "lucide-react";
 
 interface PeopleSummary {
@@ -51,6 +52,7 @@ export function PeopleReport() {
   const [expandedPeople, setExpandedPeople] = useState<Set<string>>(new Set());
   const [sortField, setSortField] = useState<"total_hours" | "revenue" | "user_name">("total_hours");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const { selectedClientId } = useClient();
 
   const handleSearch = async () => {
     if (!startDate || !endDate) return;
@@ -60,6 +62,7 @@ export function PeopleReport() {
     try {
       const params = new URLSearchParams({ startDate, endDate });
       if (personFilter) params.set("person", personFilter);
+      if (selectedClientId) params.set("clientId", String(selectedClientId));
 
       const res = await fetch(`/api/reports/people?${params}`);
       const data = await res.json();

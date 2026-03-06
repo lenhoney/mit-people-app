@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
     const viewMode = searchParams.get("view") || "project";
     const projectFilter = searchParams.get("project");
     const personFilter = searchParams.get("person");
+    const clientId = searchParams.get("clientId");
 
     // Query 1: Get actual date ranges per person per project from timesheets
     // Exclude projects with 'Completed' status
@@ -52,8 +53,12 @@ export async function GET(request: NextRequest) {
         AND COALESCE(p.status, 'Active') = 'Active'
         AND COALESCE(proj.status, 'Started') = 'Started'
     `;
-    const params: Record<string, string> = {};
+    const params: Record<string, string | number> = {};
 
+    if (clientId) {
+      timesheetQuery += " AND proj.client_id = @clientId";
+      params.clientId = Number(clientId);
+    }
     if (projectFilter) {
       timesheetQuery +=
         " AND (t.task_description LIKE @project OR t.task_number LIKE @project)";
@@ -86,8 +91,12 @@ export async function GET(request: NextRequest) {
       WHERE COALESCE(p.status, 'Active') = 'Active'
         AND COALESCE(proj.status, 'Started') = 'Started'
     `;
-    const plannedParams: Record<string, string> = {};
+    const plannedParams: Record<string, string | number> = {};
 
+    if (clientId) {
+      plannedQuery += " AND proj.client_id = @clientId";
+      plannedParams.clientId = Number(clientId);
+    }
     if (projectFilter) {
       plannedQuery +=
         " AND (pw.task_description LIKE @project OR pw.task_number LIKE @project)";
