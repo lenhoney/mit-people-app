@@ -1,0 +1,305 @@
+openapi: 3.0.3
+info:
+  title: Populus People By-Name API
+  description: External API for reading and updating person records using the person's full name as a unique key.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+
+paths:
+  /api/people/by-name:
+    get:
+      summary: Get a person by name
+      description: Returns all fields for a person, including their current rate and fiscal year label, using an exact match on the person's full name.
+      operationId: getPersonByName
+      parameters:
+        - name: name
+          in: query
+          required: true
+          description: The person's full name exactly as stored (e.g. "Amanda Baret")
+          schema:
+            type: string
+          example: Amanda Baret
+      responses:
+        "200":
+          description: Person found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Person"
+              example:
+                id: 1
+                person: Amanda Baret
+                sow: SOW-001
+                role: Developer
+                kerb: abaret
+                managed_services: 0
+                architecture: 1
+                app_support: 0
+                computing: 0
+                phone: "+27 82 123 4567"
+                work_anniversary: "2020-03-15"
+                birthday: "1990-06-22"
+                manager_name: John Smith
+                business_unit: GS
+                status: Active
+                country: South Africa
+                photo: person-1.png
+                created_at: "2024-01-01T00:00:00"
+                updated_at: "2024-06-15T10:30:00"
+                rate: 150.0
+                fy_label: FY2025
+        "400":
+          description: Missing name parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: name query parameter is required
+        "404":
+          description: Person not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: Person not found
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: Failed to fetch person
+
+    put:
+      summary: Update a person by name
+      description: |
+        Updates all fields for a person identified by their full name.
+        The name query parameter is used to look up the person.
+        All fields in the request body are optional — omitted fields default as follows:
+        - person: defaults to the current name (from query param)
+        - managed_services, architecture, app_support, computing: default to 0 (false)
+        - status: defaults to "Active"
+        - country: defaults to "South Africa"
+        - all other text fields: default to null
+      operationId: updatePersonByName
+      parameters:
+        - name: name
+          in: query
+          required: true
+          description: The person's full name exactly as stored (e.g. "Amanda Baret")
+          schema:
+            type: string
+          example: Amanda Baret
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PersonUpdate"
+            example:
+              person: Amanda Baret
+              sow: SOW-002
+              role: Senior Developer
+              kerb: abaret
+              managed_services: false
+              architecture: true
+              app_support: false
+              computing: false
+              phone: "+27 82 123 4567"
+              work_anniversary: "2020-03-15"
+              birthday: "1990-06-22"
+              manager_name: John Smith
+              business_unit: GS
+              status: Active
+              country: South Africa
+      responses:
+        "200":
+          description: Person updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: Person updated
+        "400":
+          description: Missing name parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: name query parameter is required
+        "404":
+          description: Person not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: Person not found
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: Failed to update person
+
+components:
+  schemas:
+    Person:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Internal auto-increment ID
+        person:
+          type: string
+          description: Full name (unique key)
+        sow:
+          type: string
+          nullable: true
+          description: Statement of Work reference
+        role:
+          type: string
+          nullable: true
+          description: Job role/title
+        kerb:
+          type: string
+          nullable: true
+          description: Kerberos username
+        managed_services:
+          type: integer
+          enum: [0, 1]
+          description: "Flag: belongs to Managed Services (0=no, 1=yes)"
+        architecture:
+          type: integer
+          enum: [0, 1]
+          description: "Flag: belongs to Architecture (0=no, 1=yes)"
+        app_support:
+          type: integer
+          enum: [0, 1]
+          description: "Flag: belongs to App Support (0=no, 1=yes)"
+        computing:
+          type: integer
+          enum: [0, 1]
+          description: "Flag: belongs to Computing (0=no, 1=yes)"
+        phone:
+          type: string
+          nullable: true
+          description: Phone number
+        work_anniversary:
+          type: string
+          nullable: true
+          format: date
+          description: Work anniversary date (YYYY-MM-DD)
+        birthday:
+          type: string
+          nullable: true
+          format: date
+          description: Birthday (YYYY-MM-DD)
+        manager_name:
+          type: string
+          nullable: true
+          description: Name of the person's manager
+        business_unit:
+          type: string
+          nullable: true
+          description: Business unit short name (e.g. GS, TTS)
+        status:
+          type: string
+          description: Employment status
+          default: Active
+        country:
+          type: string
+          description: Country
+          default: South Africa
+        photo:
+          type: string
+          nullable: true
+          description: Photo filename
+        created_at:
+          type: string
+          format: date-time
+          description: Record creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+        rate:
+          type: number
+          nullable: true
+          description: Current billing rate (from latest fiscal year)
+        fy_label:
+          type: string
+          nullable: true
+          description: Fiscal year label for the current rate (e.g. FY2025)
+
+    PersonUpdate:
+      type: object
+      description: All fields are optional. Omitted fields use defaults.
+      properties:
+        person:
+          type: string
+          description: Full name (can be used to rename the person)
+        sow:
+          type: string
+          nullable: true
+        role:
+          type: string
+          nullable: true
+        kerb:
+          type: string
+          nullable: true
+        managed_services:
+          type: boolean
+          description: Stored as 0/1 integer in DB
+        architecture:
+          type: boolean
+          description: Stored as 0/1 integer in DB
+        app_support:
+          type: boolean
+          description: Stored as 0/1 integer in DB
+        computing:
+          type: boolean
+          description: Stored as 0/1 integer in DB
+        phone:
+          type: string
+          nullable: true
+        work_anniversary:
+          type: string
+          nullable: true
+          format: date
+        birthday:
+          type: string
+          nullable: true
+          format: date
+        manager_name:
+          type: string
+          nullable: true
+        business_unit:
+          type: string
+          nullable: true
+        status:
+          type: string
+          default: Active
+        country:
+          type: string
+          default: South Africa
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
