@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Person not found" }, { status: 404 });
     }
 
+    await logAudit("READ", "person", (person as { id: number }).id, `Read person via external API: ${name}`);
     return NextResponse.json(person);
   } catch (error) {
     console.error("Error fetching person by name:", error);
