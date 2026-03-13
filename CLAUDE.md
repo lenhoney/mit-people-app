@@ -17,30 +17,36 @@ No test framework is configured yet.
 
 ## Architecture
 
-**Populus** is an HR/project management app built with Next.js 16 (App Router), SQLite (better-sqlite3), Auth0, and shadcn/ui.
+**Populus** is an HR/project management app built with Next.js 16 (App Router), PostgreSQL (pg), Auth0, and shadcn/ui.
 
 ### Data Flow
 
-Excel files → `src/lib/excel-parser.ts` → parsed & validated → upserted into SQLite via API routes → client components fetch from `/api/*` endpoints.
+Excel files → `src/lib/excel-parser.ts` → parsed & validated → upserted into PostgreSQL via API routes → client components fetch from `/api/*` endpoints.
 
 ### Key Directories
 
-- `src/app/api/` — RESTful API routes (people, timesheets, projects, planned-work, pto, reports, dashboard, gantt, countries, photos)
+- `src/app/api/` — RESTful API routes (people, timesheets, projects, planned-work, pto, reports, dashboard, gantt, countries, photos, clients)
 - `src/components/` — Feature-organized React components (`"use client"`, useState, fetch)
 - `src/components/ui/` — shadcn/ui primitives
-- `src/lib/db.ts` — Database singleton, schema creation, inline migrations, helper functions (`getRate`, `getRateForUser`, `cleanupPlannedWork`)
+- `src/lib/db.ts` — PostgreSQL connection pool, async query helpers (`query`, `queryOne`, `execute`, `withTransaction`), utility functions (`getRate`, `getRateForUser`, `cleanupPlannedWork`)
 - `src/lib/migrate.ts` — SQL file migration runner (reads `migrations/*.sql`, tracks in `_migrations` table)
+- `src/lib/sql-helpers.ts` — Shared SQL fragments for PostgreSQL date arithmetic and named-to-positional parameter conversion
+- `src/lib/audit.ts` — Audit trail logging utility
 - `src/lib/auth0.ts` — Auth0 client configuration
 - `src/lib/excel-parser.ts` — Excel import parsers for timesheets, rates, PTO
-- `data/` — SQLite database (`mit-people.db`) and `photos/` directory, committed to repo as seed data
+- `data/` — `photos/` and `logos/` directories for uploaded images
 
 ### Database
 
-SQLite with `better-sqlite3`. Tables created inline in `db.ts` `createDb()`. Schema changes use two mechanisms:
-1. **Inline migrations** in `db.ts` — legacy approach using `PRAGMA table_info()` to check column existence
-2. **SQL file migrations** in `migrations/` — new approach, numbered files (`001_description.sql`) applied on startup. See `docs/migrations.md`.
+PostgreSQL via `pg` (node-postgres) with connection pooling. Connection string via `DATABASE_URL` environment variable.
 
-Database instance persisted via `globalThis` to survive Next.js hot reloads. Pragmas: `journal_mode = DELETE`, `foreign_keys = ON`, `busy_timeout = 5000`.
+Database helpers in `db.ts`:
+- `query<T>(sql, params)` — returns all rows
+- `queryOne<T>(sql, params)` — returns first row or undefined
+- `execute(sql, params)` — returns `{ rowCount, rows }`
+- `withTransaction(fn)` — runs a function inside BEGIN/COMMIT/ROLLBACK
+
+Schema managed via **SQL file migrations** in `migrations/` — numbered files (`001_description.sql`) applied on startup. The consolidated PostgreSQL schema is in `migrations/005_postgresql_initial_schema.sql`.
 
 ### Auth
 
@@ -57,9 +63,9 @@ Auth0 via `@auth0/nextjs-auth0`. Session checked in `src/proxy.ts` middleware. R
 
 - **Docker**: Multi-stage build (deps → build → production). Image: `ghcr.io/lenhoney/populus`
 - **CI/CD**: GitHub Actions (`.github/workflows/docker-publish.yml`) builds and pushes on merge to `main`
-- **Hosting**: Komodo on `smartserver` via `compose.yaml` (UI Defined Stack)
-- **Data persistence**: Docker volume `populus_data` at `/app/data`. Seed data baked into image, copied on first run
-- **Reseed**: Set `RESEED_DB=true` env var in Komodo to force fresh DB on next deploy
+- **Hosting**: Railway (app + PostgreSQL add-on) or Komodo on `smartserver` via `compose.yaml`
+- **Data persistence**: PostgreSQL for all data. Docker volume `populus_data` at `/app/data` for photos/logos only.
+- **Database**: PostgreSQL 16 — managed by Railway or self-hosted via `compose.yaml`
 
 ### Environment Variables
 
@@ -69,7 +75,8 @@ AUTH0_DOMAIN        # Auth0 tenant domain
 AUTH0_CLIENT_ID     # Auth0 app client ID
 AUTH0_CLIENT_SECRET # Auth0 app secret
 AUTH0_SECRET        # Session encryption key (openssl rand -hex 32)
-RESEED_DB           # Set to "true" to force DB reseed on deploy
+DATABASE_URL        # PostgreSQL connection string (e.g. postgresql://user:pass@host:5432/dbname)
+POSTGRES_PASSWORD   # PostgreSQL password (used in compose.yaml)
 ```
 
 ## Path Alias

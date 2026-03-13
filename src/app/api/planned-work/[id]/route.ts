@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/lib/db";
+import { execute } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 
 export async function PUT(
@@ -22,25 +22,24 @@ export async function PUT(
       ? Math.max(1, Math.min(100, Math.round(allocation_pct)))
       : null;
 
-    const stmt = db.prepare(`
-      UPDATE planned_work SET
-        planned_start = COALESCE(?, planned_start),
-        planned_end = COALESCE(?, planned_end),
-        task_description = COALESCE(?, task_description),
-        allocation_pct = COALESCE(?, allocation_pct),
-        updated_at = datetime('now')
-      WHERE id = ?
-    `);
-
-    const result = stmt.run(
-      planned_start || null,
-      planned_end || null,
-      task_description || null,
-      pct,
-      id
+    const result = await execute(
+      `UPDATE planned_work SET
+        planned_start = COALESCE($1, planned_start),
+        planned_end = COALESCE($2, planned_end),
+        task_description = COALESCE($3, task_description),
+        allocation_pct = COALESCE($4, allocation_pct),
+        updated_at = NOW()
+      WHERE id = $5`,
+      [
+        planned_start || null,
+        planned_end || null,
+        task_description || null,
+        pct,
+        id,
+      ]
     );
 
-    if (result.changes === 0) {
+    if (result.rowCount === 0) {
       return NextResponse.json(
         { error: "Planned work not found" },
         { status: 404 }
@@ -64,9 +63,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const result = db.prepare("DELETE FROM planned_work WHERE id = ?").run(id);
+    const result = await execute("DELETE FROM planned_work WHERE id = $1", [id]);
 
-    if (result.changes === 0) {
+    if (result.rowCount === 0) {
       return NextResponse.json(
         { error: "Planned work not found" },
         { status: 404 }

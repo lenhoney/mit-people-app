@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db, { cleanupPlannedWork } from "@/lib/db";
+import { cleanupPlannedWork, query, queryOne } from "@/lib/db";
 
 interface RevenueRow {
   month: string;
@@ -48,19 +48,19 @@ interface PTORow {
 }
 
 // Day-level hours for a given month: only count hours for days whose actual date falls within that month
-// Uses @monthStart and @monthEnd parameters
+// Uses $monthStart and $monthEnd positional parameters (injected per-query)
 const DAY_HOURS_FOR_MONTH_SQL = `(
-  CASE WHEN date(t.week_starts_on, '+0 days') BETWEEN @monthStart AND @monthEnd THEN t.sunday ELSE 0 END +
-  CASE WHEN date(t.week_starts_on, '+1 days') BETWEEN @monthStart AND @monthEnd THEN t.monday ELSE 0 END +
-  CASE WHEN date(t.week_starts_on, '+2 days') BETWEEN @monthStart AND @monthEnd THEN t.tuesday ELSE 0 END +
-  CASE WHEN date(t.week_starts_on, '+3 days') BETWEEN @monthStart AND @monthEnd THEN t.wednesday ELSE 0 END +
-  CASE WHEN date(t.week_starts_on, '+4 days') BETWEEN @monthStart AND @monthEnd THEN t.thursday ELSE 0 END +
-  CASE WHEN date(t.week_starts_on, '+5 days') BETWEEN @monthStart AND @monthEnd THEN t.friday ELSE 0 END +
-  CASE WHEN date(t.week_starts_on, '+6 days') BETWEEN @monthStart AND @monthEnd THEN t.saturday ELSE 0 END
+  CASE WHEN (t.week_starts_on::date + 0) BETWEEN $1::date AND $2::date THEN t.sunday ELSE 0 END +
+  CASE WHEN (t.week_starts_on::date + 1) BETWEEN $1::date AND $2::date THEN t.monday ELSE 0 END +
+  CASE WHEN (t.week_starts_on::date + 2) BETWEEN $1::date AND $2::date THEN t.tuesday ELSE 0 END +
+  CASE WHEN (t.week_starts_on::date + 3) BETWEEN $1::date AND $2::date THEN t.wednesday ELSE 0 END +
+  CASE WHEN (t.week_starts_on::date + 4) BETWEEN $1::date AND $2::date THEN t.thursday ELSE 0 END +
+  CASE WHEN (t.week_starts_on::date + 5) BETWEEN $1::date AND $2::date THEN t.friday ELSE 0 END +
+  CASE WHEN (t.week_starts_on::date + 6) BETWEEN $1::date AND $2::date THEN t.saturday ELSE 0 END
 )`;
 
 // Week overlaps month if the week's Saturday >= monthStart AND week_starts_on <= monthEnd
-const MONTH_OVERLAP_FILTER = `date(t.week_starts_on, '+6 days') >= @monthStart AND t.week_starts_on <= @monthEnd`;
+const MONTH_OVERLAP_FILTER = `(t.week_starts_on::date + 6) >= $1::date AND t.week_starts_on::date <= $2::date`;
 
 const REVENUE_JOIN = `
   FROM timesheets t
@@ -150,13 +150,10 @@ function plannedBusinessDaysInMonth(
 export async function GET(request: NextRequest) {
   try {
     // Clean up past-dated planned work before calculating
-    cleanupPlannedWork();
+    await cleanupPlannedWork();
 
     const clientId = request.nextUrl.searchParams.get("clientId");
-    const clientRevenueFilter = clientId
-      ? " AND t.task_number IN (SELECT task_number FROM projects WHERE client_id = @clientId)"
-      : "";
-    const clientIdParam = clientId ? Number(clientId) : null;
+    const clientIdParam = clientId && clientId !== "null" && clientId !== "undefined" ? Number(clientId) : null;
 
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -168,25 +165,25 @@ export async function GET(request: NextRequest) {
     const currentMonthLastDay = new Date(currentYear, currentMonth, 0).getDate();
     const currentMonthEnd = `${currentMonthStr}-${String(currentMonthLastDay).padStart(2, "0")}`;
 
-    const currentMonthRevenueParams: Record<string, string | number> = {
-      monthStart: currentMonthStart,
-      monthEnd: currentMonthEnd,
-    };
-    if (clientIdParam !== null) currentMonthRevenueParams.clientId = clientIdParam;
+    // Current month revenue query
+    // Params: $1=monthStart, $2=monthEnd, ($3=clientId if filtered)
+    const clientRevenueFilter = clientId && clientId !== "null" && clientId !== "undefined"
+      ? " AND t.task_number IN (SELECT task_number FROM projects WHERE client_id = $3)"
+      : "";
+    const currentMonthRevenueParams: unknown[] = [currentMonthStart, currentMonthEnd];
+    if (clientIdParam !== null) currentMonthRevenueParams.push(clientIdParam);
 
-    const currentMonthRevenue = db
-      .prepare(
-        `SELECT COALESCE(SUM(${DAY_HOURS_FOR_MONTH_SQL} * COALESCE(pr.rate, 0)), 0) as revenue
-         ${REVENUE_JOIN}
-         WHERE t.category = 'Project' AND ${MONTH_OVERLAP_FILTER}${clientRevenueFilter}`
-      )
-      .get(currentMonthRevenueParams) as { revenue: number };
+    const currentMonthRevenue = await queryOne<{ revenue: number }>(
+      `SELECT COALESCE(SUM(${DAY_HOURS_FOR_MONTH_SQL} * COALESCE(pr.rate, 0)), 0) as revenue
+       ${REVENUE_JOIN}
+       WHERE t.category = 'Project' AND ${MONTH_OVERLAP_FILTER}${clientRevenueFilter}`,
+      currentMonthRevenueParams
+    );
 
     // ── Revenue FYTD (Financial Year To Date) ────────────────────────────
     // Epi-Use FY runs 1 March to 28/29 Feb
     // If current month >= March, FY started this year; otherwise FY started last year
     const fyStartYear = currentMonth >= 3 ? currentYear : currentYear - 1;
-    const fyStartDate = `${fyStartYear}-03-01`;
     const todayDate = now.toISOString().slice(0, 10);
 
     // Sum actual revenue from fyStartDate to today across all months in the FY
@@ -202,12 +199,6 @@ export async function GET(request: NextRequest) {
         d.setMonth(d.getMonth() + 1);
       }
 
-      const fytdRevenueStmt = db.prepare(
-        `SELECT COALESCE(SUM(${DAY_HOURS_FOR_MONTH_SQL} * COALESCE(pr.rate, 0)), 0) as revenue
-         ${REVENUE_JOIN}
-         WHERE t.category = 'Project' AND ${MONTH_OVERLAP_FILTER}${clientRevenueFilter}`
-      );
-
       for (const month of fyMonths) {
         const [my, mm] = month.split("-").map(Number);
         const mStart = `${month}-01`;
@@ -219,10 +210,16 @@ export async function GET(request: NextRequest) {
           const mLastDay = new Date(my, mm, 0).getDate();
           mEnd = `${month}-${String(mLastDay).padStart(2, "0")}`;
         }
-        const fytdParams: Record<string, string | number> = { monthStart: mStart, monthEnd: mEnd };
-        if (clientIdParam !== null) fytdParams.clientId = clientIdParam;
-        const row = fytdRevenueStmt.get(fytdParams) as { revenue: number };
-        revenueFYTD += row.revenue;
+        // Params: $1=monthStart, $2=monthEnd, ($3=clientId if filtered)
+        const fytdParams: unknown[] = [mStart, mEnd];
+        if (clientIdParam !== null) fytdParams.push(clientIdParam);
+        const row = await queryOne<{ revenue: number }>(
+          `SELECT COALESCE(SUM(${DAY_HOURS_FOR_MONTH_SQL} * COALESCE(pr.rate, 0)), 0) as revenue
+           ${REVENUE_JOIN}
+           WHERE t.category = 'Project' AND ${MONTH_OVERLAP_FILTER}${clientRevenueFilter}`,
+          fytdParams
+        );
+        revenueFYTD += row?.revenue ?? 0;
       }
       revenueFYTD = Math.round(revenueFYTD * 100) / 100;
     }
@@ -243,16 +240,21 @@ export async function GET(request: NextRequest) {
 
     // Find the maximum planned_end date from the planned_work table
     // When clientId is provided, only consider planned work for this client's projects
-    const maxPlannedEndQuery = clientId
-      ? `SELECT MAX(pw.planned_end) as max_end FROM planned_work pw
+    let maxPlannedEndRow: { max_end: string | null } | undefined;
+    if (clientId && clientId !== "null" && clientId !== "undefined") {
+      maxPlannedEndRow = await queryOne<{ max_end: string | null }>(
+        `SELECT MAX(pw.planned_end) as max_end FROM planned_work pw
          JOIN projects proj ON pw.task_number = proj.task_number
-         WHERE proj.client_id = ?`
-      : "SELECT MAX(planned_end) as max_end FROM planned_work";
-    const maxPlannedEndRow = clientId
-      ? db.prepare(maxPlannedEndQuery).get(clientIdParam) as { max_end: string | null }
-      : db.prepare(maxPlannedEndQuery).get() as { max_end: string | null };
+         WHERE proj.client_id = $1`,
+        [clientIdParam]
+      );
+    } else {
+      maxPlannedEndRow = await queryOne<{ max_end: string | null }>(
+        "SELECT MAX(planned_end) as max_end FROM planned_work"
+      );
+    }
 
-    if (maxPlannedEndRow.max_end) {
+    if (maxPlannedEndRow?.max_end) {
       const maxEnd = maxPlannedEndRow.max_end;
       const [maxY, maxM] = maxEnd.split("-").map(Number);
       const maxEndMonth = `${maxY}-${String(maxM).padStart(2, "0")}`;
@@ -274,22 +276,22 @@ export async function GET(request: NextRequest) {
     }
 
     // Actual revenue per month (day-level precision)
-    const monthlyRevenueStmt = db.prepare(
-      `SELECT COALESCE(SUM(${DAY_HOURS_FOR_MONTH_SQL} * COALESCE(pr.rate, 0)), 0) as revenue
-       ${REVENUE_JOIN}
-       WHERE t.category = 'Project' AND ${MONTH_OVERLAP_FILTER}${clientRevenueFilter}`
-    );
-
     const actualByMonth = new Map<string, number>();
     for (const month of months) {
       const [my, mm] = month.split("-").map(Number);
       const mStart = `${month}-01`;
       const mLastDay = new Date(my, mm, 0).getDate();
       const mEnd = `${month}-${String(mLastDay).padStart(2, "0")}`;
-      const monthParams: Record<string, string | number> = { monthStart: mStart, monthEnd: mEnd };
-      if (clientIdParam !== null) monthParams.clientId = clientIdParam;
-      const row = monthlyRevenueStmt.get(monthParams) as { revenue: number };
-      actualByMonth.set(month, Math.round(row.revenue * 100) / 100);
+      // Params: $1=monthStart, $2=monthEnd, ($3=clientId if filtered)
+      const monthParams: unknown[] = [mStart, mEnd];
+      if (clientIdParam !== null) monthParams.push(clientIdParam);
+      const row = await queryOne<{ revenue: number }>(
+        `SELECT COALESCE(SUM(${DAY_HOURS_FOR_MONTH_SQL} * COALESCE(pr.rate, 0)), 0) as revenue
+         ${REVENUE_JOIN}
+         WHERE t.category = 'Project' AND ${MONTH_OVERLAP_FILTER}${clientRevenueFilter}`,
+        monthParams
+      );
+      actualByMonth.set(month, Math.round((row?.revenue ?? 0) * 100) / 100);
     }
 
     // ── Planned revenue per month ──────────────────────────────────────────
@@ -301,34 +303,24 @@ export async function GET(request: NextRequest) {
     const windowEnd = `${ly}-${String(lm).padStart(2, "0")}-31`;
 
     // When clientId is provided, only include planned work for this client's projects
-    const plannedWorkQuery = clientId
-      ? `SELECT pw.person_id, pw.planned_start, pw.planned_end, pw.allocation_pct
+    let plannedRows: PlannedWorkRow[];
+    if (clientId && clientId !== "null" && clientId !== "undefined") {
+      plannedRows = await query<PlannedWorkRow>(
+        `SELECT pw.person_id, pw.planned_start, pw.planned_end, pw.allocation_pct
          FROM planned_work pw
          JOIN projects proj ON pw.task_number = proj.task_number
-         WHERE pw.planned_end >= ? AND pw.planned_start <= ?
-           AND proj.client_id = ?`
-      : `SELECT pw.person_id, pw.planned_start, pw.planned_end, pw.allocation_pct
+         WHERE pw.planned_end >= $1 AND pw.planned_start <= $2
+           AND proj.client_id = $3`,
+        [windowStart, windowEnd, clientIdParam]
+      );
+    } else {
+      plannedRows = await query<PlannedWorkRow>(
+        `SELECT pw.person_id, pw.planned_start, pw.planned_end, pw.allocation_pct
          FROM planned_work pw
-         WHERE pw.planned_end >= ? AND pw.planned_start <= ?`;
-
-    const plannedRows = clientId
-      ? db.prepare(plannedWorkQuery).all(windowStart, windowEnd, clientIdParam) as PlannedWorkRow[]
-      : db.prepare(plannedWorkQuery).all(windowStart, windowEnd) as PlannedWorkRow[];
-
-    // Get rates for these people that overlap the window
-    const rateStmt = db.prepare(
-      `SELECT rate, fy_start, fy_end FROM people_rates
-       WHERE person_id = ? AND fy_end >= ? AND fy_start <= ?
-       ORDER BY fy_start DESC`
-    );
-
-    // Fallback: get the latest rate for a person (used when month is beyond all FY windows)
-    const latestRateStmt = db.prepare(
-      `SELECT rate, fy_start, fy_end FROM people_rates
-       WHERE person_id = ?
-       ORDER BY fy_end DESC
-       LIMIT 1`
-    );
+         WHERE pw.planned_end >= $1 AND pw.planned_start <= $2`,
+        [windowStart, windowEnd]
+      );
+    }
 
     const plannedByMonth = new Map<string, number>();
     const ptoLossByMonth = new Map<string, number>();
@@ -338,14 +330,22 @@ export async function GET(request: NextRequest) {
     }
 
     for (const pw of plannedRows) {
-      const rates = rateStmt.all(
-        pw.person_id,
-        windowStart,
-        windowEnd
-      ) as RateRow[];
+      // Get rates for this person that overlap the window
+      const rates = await query<RateRow>(
+        `SELECT rate, fy_start, fy_end FROM people_rates
+         WHERE person_id = $1 AND fy_end >= $2 AND fy_start <= $3
+         ORDER BY fy_start DESC`,
+        [pw.person_id, windowStart, windowEnd]
+      );
 
       // Also fetch the latest rate as fallback for months beyond the FY window
-      const latestRate = latestRateStmt.get(pw.person_id) as RateRow | undefined;
+      const latestRate = await queryOne<RateRow>(
+        `SELECT rate, fy_start, fy_end FROM people_rates
+         WHERE person_id = $1
+         ORDER BY fy_end DESC
+         LIMIT 1`,
+        [pw.person_id]
+      );
 
       for (const month of months) {
         const bizDays = plannedBusinessDaysInMonth(
@@ -386,28 +386,34 @@ export async function GET(request: NextRequest) {
     // ── Subtract PTO from planned revenue ──────────────────────────────
     // Query Personal and Sick PTO entries that overlap the chart window
     // and have a matched person_id (so we can look up their rate)
-    const ptoRows = db
-      .prepare(
-        `SELECT pto.person_id, pto.start_date, pto.end_date, pto.type,
-                pto.billable_days, pto.business_days
-         FROM personal_time_off pto
-         WHERE pto.type IN ('Personal', 'Sick')
-           AND pto.person_id IS NOT NULL
-           AND pto.end_date >= ? AND pto.start_date <= ?`
-      )
-      .all(windowStart, windowEnd) as PTORow[];
+    const ptoRows = await query<PTORow>(
+      `SELECT pto.person_id, pto.start_date, pto.end_date, pto.type,
+              pto.billable_days, pto.business_days
+       FROM personal_time_off pto
+       WHERE pto.type IN ('Personal', 'Sick')
+         AND pto.person_id IS NOT NULL
+         AND pto.end_date >= $1 AND pto.start_date <= $2`,
+      [windowStart, windowEnd]
+    );
 
     for (const pto of ptoRows) {
       const billable = pto.billable_days ?? pto.business_days;
       if (billable <= 0) continue;
 
       // Get rates for this person
-      const ptoRates = rateStmt.all(
-        pto.person_id,
-        windowStart,
-        windowEnd
-      ) as RateRow[];
-      const ptoLatestRate = latestRateStmt.get(pto.person_id) as RateRow | undefined;
+      const ptoRates = await query<RateRow>(
+        `SELECT rate, fy_start, fy_end FROM people_rates
+         WHERE person_id = $1 AND fy_end >= $2 AND fy_start <= $3
+         ORDER BY fy_start DESC`,
+        [pto.person_id, windowStart, windowEnd]
+      );
+      const ptoLatestRate = await queryOne<RateRow>(
+        `SELECT rate, fy_start, fy_end FROM people_rates
+         WHERE person_id = $1
+         ORDER BY fy_end DESC
+         LIMIT 1`,
+        [pto.person_id]
+      );
 
       for (const month of months) {
         const ptoDaysInMonth = ptoBillableDaysInMonth(
@@ -461,54 +467,56 @@ export async function GET(request: NextRequest) {
     // Top 10 people who haven't booked timesheets for the current month
     // Missing timesheets: only check active people (day-level precision)
     // When clientId is provided, scope to people who have projects for this client
-    const clientMissingPeopleFilter = clientId
-      ? `AND p.id IN (
+    //
+    // Build the missing timesheets query with proper positional params.
+    // Base params: $1=monthStart, $2=monthEnd
+    // If clientId: $3=clientId
+    const missingParams: unknown[] = [currentMonthStart, currentMonthEnd];
+
+    let clientMissingPeopleFilter = "";
+    let clientMissingTimesheetFilter = "";
+    if (clientIdParam !== null) {
+      missingParams.push(clientIdParam);
+      const cidIdx = missingParams.length; // $3
+      clientMissingPeopleFilter = `AND p.id IN (
            SELECT DISTINCT pw2.person_id FROM planned_work pw2
            JOIN projects proj2 ON pw2.task_number = proj2.task_number
-           WHERE proj2.client_id = @clientId
+           WHERE proj2.client_id = $${cidIdx}
            UNION
            SELECT DISTINCT p2.id FROM people p2
            JOIN timesheets t2 ON t2.user_name = p2.person
            JOIN projects proj2 ON t2.task_number = proj2.task_number
-           WHERE proj2.client_id = @clientId
-         )`
-      : "";
-    const clientMissingTimesheetFilter = clientId
-      ? " AND t.task_number IN (SELECT task_number FROM projects WHERE client_id = @clientId)"
-      : "";
-    const missingParams: Record<string, string | number> = {
-      monthStart: currentMonthStart,
-      monthEnd: currentMonthEnd,
-    };
-    if (clientIdParam !== null) missingParams.clientId = clientIdParam;
+           WHERE proj2.client_id = $${cidIdx}
+         )`;
+      clientMissingTimesheetFilter = ` AND t.task_number IN (SELECT task_number FROM projects WHERE client_id = $${cidIdx})`;
+    }
 
-    const missingTimesheets = db
-      .prepare(
-        `SELECT p.person, p.role, p.sow, p.photo
-         FROM people p
-         WHERE COALESCE(p.status, 'Active') = 'Active'
-           ${clientMissingPeopleFilter}
-           AND p.person NOT IN (
-             SELECT DISTINCT t.user_name
-             FROM timesheets t
-             WHERE date(t.week_starts_on, '+6 days') >= @monthStart
-               AND t.week_starts_on <= @monthEnd
-               AND t.category = 'Project'
-               ${clientMissingTimesheetFilter}
-               AND (
-                 CASE WHEN date(t.week_starts_on, '+0 days') BETWEEN @monthStart AND @monthEnd THEN t.sunday ELSE 0 END +
-                 CASE WHEN date(t.week_starts_on, '+1 days') BETWEEN @monthStart AND @monthEnd THEN t.monday ELSE 0 END +
-                 CASE WHEN date(t.week_starts_on, '+2 days') BETWEEN @monthStart AND @monthEnd THEN t.tuesday ELSE 0 END +
-                 CASE WHEN date(t.week_starts_on, '+3 days') BETWEEN @monthStart AND @monthEnd THEN t.wednesday ELSE 0 END +
-                 CASE WHEN date(t.week_starts_on, '+4 days') BETWEEN @monthStart AND @monthEnd THEN t.thursday ELSE 0 END +
-                 CASE WHEN date(t.week_starts_on, '+5 days') BETWEEN @monthStart AND @monthEnd THEN t.friday ELSE 0 END +
-                 CASE WHEN date(t.week_starts_on, '+6 days') BETWEEN @monthStart AND @monthEnd THEN t.saturday ELSE 0 END
-               ) > 0
-           )
-         ORDER BY p.person ASC
-         LIMIT 10`
-      )
-      .all(missingParams) as MissingPerson[];
+    const missingTimesheets = await query<MissingPerson>(
+      `SELECT p.person, p.role, p.sow, p.photo
+       FROM people p
+       WHERE COALESCE(p.status, 'Active') = 'Active'
+         ${clientMissingPeopleFilter}
+         AND p.person NOT IN (
+           SELECT DISTINCT t.user_name
+           FROM timesheets t
+           WHERE (t.week_starts_on::date + 6) >= $1::date
+             AND t.week_starts_on::date <= $2::date
+             AND t.category = 'Project'
+             ${clientMissingTimesheetFilter}
+             AND (
+               CASE WHEN (t.week_starts_on::date + 0) BETWEEN $1::date AND $2::date THEN t.sunday ELSE 0 END +
+               CASE WHEN (t.week_starts_on::date + 1) BETWEEN $1::date AND $2::date THEN t.monday ELSE 0 END +
+               CASE WHEN (t.week_starts_on::date + 2) BETWEEN $1::date AND $2::date THEN t.tuesday ELSE 0 END +
+               CASE WHEN (t.week_starts_on::date + 3) BETWEEN $1::date AND $2::date THEN t.wednesday ELSE 0 END +
+               CASE WHEN (t.week_starts_on::date + 4) BETWEEN $1::date AND $2::date THEN t.thursday ELSE 0 END +
+               CASE WHEN (t.week_starts_on::date + 5) BETWEEN $1::date AND $2::date THEN t.friday ELSE 0 END +
+               CASE WHEN (t.week_starts_on::date + 6) BETWEEN $1::date AND $2::date THEN t.saturday ELSE 0 END
+             ) > 0
+         )
+       ORDER BY p.person ASC
+       LIMIT 10`,
+      missingParams
+    );
 
     // ── Bench risk: people without sufficient planned work 2+ months out ────
     // The horizon date is 2 months from today
@@ -517,109 +525,119 @@ export async function GET(request: NextRequest) {
 
     // Get all active people (exclude Not Active from bench risk)
     // When clientId is provided, only include people who have projects for this client
-    const clientBenchPeopleFilter = clientId
-      ? `AND p.id IN (
+    let allPeople: { person_id: number; person: string; role: string | null; sow: string | null; photo: string | null }[];
+    if (clientId && clientId !== "null" && clientId !== "undefined") {
+      allPeople = await query<{ person_id: number; person: string; role: string | null; sow: string | null; photo: string | null }>(
+        `SELECT p.id as person_id, p.person, p.role, p.sow, p.photo
+         FROM people p
+         WHERE COALESCE(p.status, 'Active') = 'Active'
+         AND p.id IN (
            SELECT DISTINCT pw2.person_id FROM planned_work pw2
            JOIN projects proj2 ON pw2.task_number = proj2.task_number
-           WHERE proj2.client_id = ?
+           WHERE proj2.client_id = $1
            UNION
            SELECT DISTINCT p2.id FROM people p2
            JOIN timesheets t2 ON t2.user_name = p2.person
            JOIN projects proj2 ON t2.task_number = proj2.task_number
-           WHERE proj2.client_id = ?
-         )`
-      : "";
-
-    const allPeopleParams = clientId
-      ? [clientIdParam, clientIdParam]
-      : [];
-
-    const allPeople = db
-      .prepare(
+           WHERE proj2.client_id = $1
+         )
+         ORDER BY p.person ASC`,
+        [clientIdParam]
+      );
+    } else {
+      allPeople = await query<{ person_id: number; person: string; role: string | null; sow: string | null; photo: string | null }>(
         `SELECT p.id as person_id, p.person, p.role, p.sow, p.photo
          FROM people p
          WHERE COALESCE(p.status, 'Active') = 'Active'
-         ${clientBenchPeopleFilter}
          ORDER BY p.person ASC`
-      )
-      .all(...allPeopleParams) as { person_id: number; person: string; role: string | null; sow: string | null; photo: string | null }[];
+      );
+    }
 
     // For each person, sum allocation_pct of planned work entries that extend beyond the horizon
     // When clientId is provided, only count planned work for this client's projects
-    const clientBenchAllocFilter = clientId
-      ? " AND pw.task_number IN (SELECT task_number FROM projects WHERE client_id = ?)"
-      : "";
-    const personAllocStmt = db.prepare(
-      `SELECT COALESCE(SUM(pw.allocation_pct), 0) as total_alloc,
-              MAX(pw.planned_end) as latest_end
-       FROM planned_work pw
-       WHERE pw.person_id = ? AND pw.planned_end > ?${clientBenchAllocFilter}`
-    );
-
-    // Also get the absolute latest planned_end for each person (regardless of horizon)
-    const personPlannedToStmt = clientId
-      ? db.prepare(
-          `SELECT MAX(pw.planned_end) as planned_to
-           FROM planned_work pw
-           JOIN projects proj ON pw.task_number = proj.task_number
-           WHERE pw.person_id = ? AND proj.client_id = ?`
-        )
-      : db.prepare(
-          `SELECT MAX(pw.planned_end) as planned_to
-           FROM planned_work pw
-           WHERE pw.person_id = ?`
-        );
-
     const benchRisk: BenchRiskPerson[] = [];
     for (const p of allPeople) {
-      const allocParams = clientId
-        ? [p.person_id, horizonStr, clientIdParam]
-        : [p.person_id, horizonStr];
-      const row = personAllocStmt.get(...allocParams) as {
-        total_alloc: number;
-        latest_end: string | null;
-      };
-      if (row.total_alloc < 50) {
-        const plannedToParams = clientId
-          ? [p.person_id, clientIdParam]
-          : [p.person_id];
-        const plannedToRow = personPlannedToStmt.get(...plannedToParams) as {
-          planned_to: string | null;
-        };
+      let allocRow: { total_alloc: number; latest_end: string | null } | undefined;
+      if (clientId && clientId !== "null" && clientId !== "undefined") {
+        allocRow = await queryOne<{ total_alloc: number; latest_end: string | null }>(
+          `SELECT COALESCE(SUM(pw.allocation_pct), 0) as total_alloc,
+                  MAX(pw.planned_end) as latest_end
+           FROM planned_work pw
+           WHERE pw.person_id = $1 AND pw.planned_end > $2
+             AND pw.task_number IN (SELECT task_number FROM projects WHERE client_id = $3)`,
+          [p.person_id, horizonStr, clientIdParam]
+        );
+      } else {
+        allocRow = await queryOne<{ total_alloc: number; latest_end: string | null }>(
+          `SELECT COALESCE(SUM(pw.allocation_pct), 0) as total_alloc,
+                  MAX(pw.planned_end) as latest_end
+           FROM planned_work pw
+           WHERE pw.person_id = $1 AND pw.planned_end > $2`,
+          [p.person_id, horizonStr]
+        );
+      }
+
+      const totalAlloc = allocRow?.total_alloc ?? 0;
+      if (totalAlloc < 50) {
+        // Also get the absolute latest planned_end for each person (regardless of horizon)
+        let plannedToRow: { planned_to: string | null } | undefined;
+        if (clientId && clientId !== "null" && clientId !== "undefined") {
+          plannedToRow = await queryOne<{ planned_to: string | null }>(
+            `SELECT MAX(pw.planned_end) as planned_to
+             FROM planned_work pw
+             JOIN projects proj ON pw.task_number = proj.task_number
+             WHERE pw.person_id = $1 AND proj.client_id = $2`,
+            [p.person_id, clientIdParam]
+          );
+        } else {
+          plannedToRow = await queryOne<{ planned_to: string | null }>(
+            `SELECT MAX(pw.planned_end) as planned_to
+             FROM planned_work pw
+             WHERE pw.person_id = $1`,
+            [p.person_id]
+          );
+        }
         benchRisk.push({
           person: p.person,
           person_id: p.person_id,
           photo: p.photo,
           role: p.role,
           sow: p.sow,
-          total_allocation: row.total_alloc,
-          latest_planned_end: row.latest_end,
-          planned_to: plannedToRow.planned_to,
+          total_allocation: totalAlloc,
+          latest_planned_end: allocRow?.latest_end ?? null,
+          planned_to: plannedToRow?.planned_to ?? null,
         });
       }
     }
 
-    const totalPeople = (
-      db.prepare("SELECT COUNT(*) as count FROM people").get() as {
-        count: number;
-      }
-    ).count;
-    const totalTimesheets = (
-      db.prepare("SELECT COUNT(*) as count FROM timesheets").get() as {
-        count: number;
-      }
-    ).count;
+    const totalPeopleRow = await queryOne<{ count: number }>(
+      "SELECT COUNT(*) as count FROM people"
+    );
+    const totalPeople = totalPeopleRow?.count ?? 0;
+
+    const totalTimesheetsRow = await queryOne<{ count: number }>(
+      "SELECT COUNT(*) as count FROM timesheets"
+    );
+    const totalTimesheets = totalTimesheetsRow?.count ?? 0;
 
     // ── Project Budget Health ──────────────────────────────────────────────
     // For all projects with budget > 0, compute how much has been billed
     // (timesheet hours x person rate) and compare against budget.
-    const clientBudgetFilter = clientId
-      ? " AND proj.client_id = ?"
-      : "";
-    const budgetParams = clientId ? [clientIdParam] : [];
-
-    const budgetHealthRows = db
-      .prepare(
+    let budgetHealthRows: {
+      id: number;
+      task_number: string;
+      task_description: string | null;
+      budget: number;
+      billed: number;
+    }[];
+    if (clientId && clientId !== "null" && clientId !== "undefined") {
+      budgetHealthRows = await query<{
+        id: number;
+        task_number: string;
+        task_description: string | null;
+        budget: number;
+        billed: number;
+      }>(
         `SELECT
            proj.id,
            proj.task_number,
@@ -634,17 +652,37 @@ export async function GET(request: NextRequest) {
            AND t.week_starts_on <= pr.fy_end
          WHERE proj.budget IS NOT NULL AND proj.budget > 0
            AND COALESCE(proj.status, 'Started') = 'Started'
-           ${clientBudgetFilter}
+           AND proj.client_id = $1
          GROUP BY proj.id, proj.task_number, proj.task_description, proj.budget
-         ORDER BY proj.task_description ASC`
-      )
-      .all(...budgetParams) as {
+         ORDER BY proj.task_description ASC`,
+        [clientIdParam]
+      );
+    } else {
+      budgetHealthRows = await query<{
         id: number;
         task_number: string;
         task_description: string | null;
         budget: number;
         billed: number;
-      }[];
+      }>(
+        `SELECT
+           proj.id,
+           proj.task_number,
+           proj.task_description,
+           proj.budget,
+           COALESCE(SUM(t.total * COALESCE(pr.rate, 0)), 0) as billed
+         FROM projects proj
+         LEFT JOIN timesheets t ON t.task_number = proj.task_number
+         LEFT JOIN people p ON t.user_name = p.person
+         LEFT JOIN people_rates pr ON pr.person_id = p.id
+           AND t.week_starts_on >= pr.fy_start
+           AND t.week_starts_on <= pr.fy_end
+         WHERE proj.budget IS NOT NULL AND proj.budget > 0
+           AND COALESCE(proj.status, 'Started') = 'Started'
+         GROUP BY proj.id, proj.task_number, proj.task_description, proj.budget
+         ORDER BY proj.task_description ASC`
+      );
+    }
 
     const projectBudgetHealth = budgetHealthRows.map((row) => {
       const remaining = row.budget - row.billed;
@@ -671,27 +709,26 @@ export async function GET(request: NextRequest) {
     const twoWeeksOut = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 14);
     const twoWeeksStr = twoWeeksOut.toISOString().slice(0, 10);
 
-    const upcomingPTO = db
-      .prepare(
-        `SELECT pto.id, pto.person_name, pto.kerb, pto.start_date, pto.end_date,
-                pto.type, pto.business_days, pto.billable_days, p.person as matched_person, p.photo
-         FROM personal_time_off pto
-         LEFT JOIN people p ON pto.person_id = p.id
-         WHERE pto.end_date >= ? AND pto.start_date <= ?
-         ORDER BY pto.start_date ASC, pto.person_name ASC`
-      )
-      .all(todayStr, twoWeeksStr) as {
-        id: number;
-        person_name: string;
-        kerb: string | null;
-        start_date: string;
-        end_date: string;
-        type: string;
-        business_days: number;
-        billable_days: number | null;
-        matched_person: string | null;
-        photo: string | null;
-      }[];
+    const upcomingPTO = await query<{
+      id: number;
+      person_name: string;
+      kerb: string | null;
+      start_date: string;
+      end_date: string;
+      type: string;
+      business_days: number;
+      billable_days: number | null;
+      matched_person: string | null;
+      photo: string | null;
+    }>(
+      `SELECT pto.id, pto.person_name, pto.kerb, pto.start_date, pto.end_date,
+              pto.type, pto.business_days, pto.billable_days, p.person as matched_person, p.photo
+       FROM personal_time_off pto
+       LEFT JOIN people p ON pto.person_id = p.id
+       WHERE pto.end_date >= $1 AND pto.start_date <= $2
+       ORDER BY pto.start_date ASC, pto.person_name ASC`,
+      [todayStr, twoWeeksStr]
+    );
 
     // ── Birthday Reminders: all birthdays this month (UNFILTERED) ─────────
     const todayMMDD = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -699,20 +736,19 @@ export async function GET(request: NextRequest) {
     const tomorrowMMDD = `${String(tomorrowDate.getMonth() + 1).padStart(2, "0")}-${String(tomorrowDate.getDate()).padStart(2, "0")}`;
     const birthdayMonthPrefix = `${String(now.getMonth() + 1).padStart(2, "0")}-%`;
 
-    const birthdayRows = db
-      .prepare(
-        `SELECT p.id, p.person, p.photo, p.birthday
-         FROM people p
-         WHERE COALESCE(p.status, 'Active') = 'Active'
-           AND p.birthday LIKE ?
-         ORDER BY p.birthday ASC, p.person ASC`
-      )
-      .all(birthdayMonthPrefix) as {
-        id: number;
-        person: string;
-        photo: string | null;
-        birthday: string;
-      }[];
+    const birthdayRows = await query<{
+      id: number;
+      person: string;
+      photo: string | null;
+      birthday: string;
+    }>(
+      `SELECT p.id, p.person, p.photo, p.birthday
+       FROM people p
+       WHERE COALESCE(p.status, 'Active') = 'Active'
+         AND p.birthday LIKE $1
+       ORDER BY p.birthday ASC, p.person ASC`,
+      [birthdayMonthPrefix]
+    );
 
     const birthdays = birthdayRows.map((row) => ({
       ...row,
@@ -725,22 +761,21 @@ export async function GET(request: NextRequest) {
 
     // ── Work Anniversaries: people whose anniversary month is this month (UNFILTERED) ──
     const currentMonthPadded = String(now.getMonth() + 1).padStart(2, "0");
-    const anniversaryRows = db
-      .prepare(
-        `SELECT p.id, p.person, p.photo, p.work_anniversary
-         FROM people p
-         WHERE COALESCE(p.status, 'Active') = 'Active'
-           AND p.work_anniversary IS NOT NULL
-           AND p.work_anniversary != ''
-           AND substr(p.work_anniversary, 6, 2) = ?
-         ORDER BY substr(p.work_anniversary, 9, 2) ASC, p.person ASC`
-      )
-      .all(currentMonthPadded) as {
-        id: number;
-        person: string;
-        photo: string | null;
-        work_anniversary: string;
-      }[];
+    const anniversaryRows = await query<{
+      id: number;
+      person: string;
+      photo: string | null;
+      work_anniversary: string;
+    }>(
+      `SELECT p.id, p.person, p.photo, p.work_anniversary
+       FROM people p
+       WHERE COALESCE(p.status, 'Active') = 'Active'
+         AND p.work_anniversary IS NOT NULL
+         AND p.work_anniversary != ''
+         AND substr(p.work_anniversary, 6, 2) = $1
+       ORDER BY substr(p.work_anniversary, 9, 2) ASC, p.person ASC`,
+      [currentMonthPadded]
+    );
 
     const workAnniversaries = anniversaryRows
       .map((row) => {
@@ -767,49 +802,43 @@ export async function GET(request: NextRequest) {
     if (totalWeekdays > 0) {
       // For each active person, count distinct weekdays with >0 hours
       // A weekday is "covered" if ANY timesheet row has >0 hours on that day
-      // We use the day-level date calculation: date(week_starts_on, '+N days')
+      // We use the day-level date calculation: week_starts_on::date + N
       // Sunday=+0, Monday=+1, ..., Friday=+5
-      const perPersonDays = db
-        .prepare(
-          `SELECT p.person,
-            COUNT(DISTINCT submitted_date) as days_submitted
-           FROM people p
-           LEFT JOIN (
-             SELECT t.user_name, date(t.week_starts_on, '+1 days') as submitted_date
-               FROM timesheets t
-               WHERE date(t.week_starts_on, '+1 days') BETWEEN ? AND ?
-                 AND t.monday > 0
-             UNION
-             SELECT t.user_name, date(t.week_starts_on, '+2 days')
-               FROM timesheets t
-               WHERE date(t.week_starts_on, '+2 days') BETWEEN ? AND ?
-                 AND t.tuesday > 0
-             UNION
-             SELECT t.user_name, date(t.week_starts_on, '+3 days')
-               FROM timesheets t
-               WHERE date(t.week_starts_on, '+3 days') BETWEEN ? AND ?
-                 AND t.wednesday > 0
-             UNION
-             SELECT t.user_name, date(t.week_starts_on, '+4 days')
-               FROM timesheets t
-               WHERE date(t.week_starts_on, '+4 days') BETWEEN ? AND ?
-                 AND t.thursday > 0
-             UNION
-             SELECT t.user_name, date(t.week_starts_on, '+5 days')
-               FROM timesheets t
-               WHERE date(t.week_starts_on, '+5 days') BETWEEN ? AND ?
-                 AND t.friday > 0
-           ) sub ON sub.user_name = p.person
-           WHERE COALESCE(p.status, 'Active') = 'Active'
-           GROUP BY p.person`
-        )
-        .all(
-          currentMonthStart, todayStr,
-          currentMonthStart, todayStr,
-          currentMonthStart, todayStr,
-          currentMonthStart, todayStr,
-          currentMonthStart, todayStr
-        ) as { person: string; days_submitted: number }[];
+      // Params: $1=currentMonthStart, $2=todayStr (used 5 times each in the UNIONs)
+      const perPersonDays = await query<{ person: string; days_submitted: number }>(
+        `SELECT p.person,
+          COUNT(DISTINCT submitted_date) as days_submitted
+         FROM people p
+         LEFT JOIN (
+           SELECT t.user_name, (t.week_starts_on::date + 1)::text as submitted_date
+             FROM timesheets t
+             WHERE (t.week_starts_on::date + 1) BETWEEN $1::date AND $2::date
+               AND t.monday > 0
+           UNION
+           SELECT t.user_name, (t.week_starts_on::date + 2)::text
+             FROM timesheets t
+             WHERE (t.week_starts_on::date + 2) BETWEEN $1::date AND $2::date
+               AND t.tuesday > 0
+           UNION
+           SELECT t.user_name, (t.week_starts_on::date + 3)::text
+             FROM timesheets t
+             WHERE (t.week_starts_on::date + 3) BETWEEN $1::date AND $2::date
+               AND t.wednesday > 0
+           UNION
+           SELECT t.user_name, (t.week_starts_on::date + 4)::text
+             FROM timesheets t
+             WHERE (t.week_starts_on::date + 4) BETWEEN $1::date AND $2::date
+               AND t.thursday > 0
+           UNION
+           SELECT t.user_name, (t.week_starts_on::date + 5)::text
+             FROM timesheets t
+             WHERE (t.week_starts_on::date + 5) BETWEEN $1::date AND $2::date
+               AND t.friday > 0
+         ) sub ON sub.user_name = p.person
+         WHERE COALESCE(p.status, 'Active') = 'Active'
+         GROUP BY p.person`,
+        [currentMonthStart, todayStr]
+      );
 
       if (perPersonDays.length > 0) {
         const totalPct = perPersonDays.reduce((sum, row) => {
@@ -821,7 +850,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       currentMonthRevenue:
-        Math.round(currentMonthRevenue.revenue * 100) / 100,
+        Math.round((currentMonthRevenue?.revenue ?? 0) * 100) / 100,
       currentPlannedRevenue:
         Math.round(currentPlannedRevenue * 100) / 100,
       currentMonth: currentMonthStr,

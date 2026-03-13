@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/lib/db";
+import { queryOne, withTransaction } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 
 export async function PUT(
@@ -32,9 +32,10 @@ export async function PUT(
     } = body;
 
     // Look up existing business unit
-    const existing = db
-      .prepare("SELECT short_name FROM business_units WHERE id = ?")
-      .get(id) as { short_name: string } | undefined;
+    const existing = await queryOne<{ short_name: string }>(
+      "SELECT short_name FROM business_units WHERE id = $1",
+      [id]
+    );
 
     if (!existing) {
       return NextResponse.json(
@@ -47,63 +48,63 @@ export async function PUT(
     const newShortName = short_name?.trim() || oldShortName;
 
     // Use a transaction for cascade updates
-    const updateTransaction = db.transaction(() => {
+    await withTransaction(async (client) => {
       // If short_name changed, cascade to people
       if (newShortName !== oldShortName) {
-        db.prepare(
-          "UPDATE people SET business_unit = ?, updated_at = datetime('now') WHERE business_unit = ?"
-        ).run(newShortName, oldShortName);
+        await client.query(
+          "UPDATE people SET business_unit = $1, updated_at = NOW() WHERE business_unit = $2",
+          [newShortName, oldShortName]
+        );
       }
 
       // Update the business unit record
-      db.prepare(
+      await client.query(
         `UPDATE business_units SET
-          short_name = ?,
-          registered_name = ?,
-          signatory_for_icm = ?,
-          manager_1 = ?,
-          manager_2 = ?,
-          registered_street_address = ?,
-          registered_city = ?,
-          registered_zipcode = ?,
-          registered_country = ?,
-          icm_signatory_name = ?,
-          icm_signatory_title = ?,
-          icm_contractual_address = ?,
-          icm_signatory_phone = ?,
-          icm_signatory_email = ?,
-          icm_billing_name = ?,
-          icm_billing_title = ?,
-          icm_billing_address = ?,
-          icm_billing_phone = ?,
-          icm_billing_email = ?,
-          updated_at = datetime('now')
-        WHERE id = ?`
-      ).run(
-        newShortName,
-        registered_name || null,
-        signatory_for_icm || null,
-        manager_1 || null,
-        manager_2 || null,
-        registered_street_address || null,
-        registered_city || null,
-        registered_zipcode || null,
-        registered_country || null,
-        icm_signatory_name || null,
-        icm_signatory_title || null,
-        icm_contractual_address || null,
-        icm_signatory_phone || null,
-        icm_signatory_email || null,
-        icm_billing_name || null,
-        icm_billing_title || null,
-        icm_billing_address || null,
-        icm_billing_phone || null,
-        icm_billing_email || null,
-        id
+          short_name = $1,
+          registered_name = $2,
+          signatory_for_icm = $3,
+          manager_1 = $4,
+          manager_2 = $5,
+          registered_street_address = $6,
+          registered_city = $7,
+          registered_zipcode = $8,
+          registered_country = $9,
+          icm_signatory_name = $10,
+          icm_signatory_title = $11,
+          icm_contractual_address = $12,
+          icm_signatory_phone = $13,
+          icm_signatory_email = $14,
+          icm_billing_name = $15,
+          icm_billing_title = $16,
+          icm_billing_address = $17,
+          icm_billing_phone = $18,
+          icm_billing_email = $19,
+          updated_at = NOW()
+        WHERE id = $20`,
+        [
+          newShortName,
+          registered_name || null,
+          signatory_for_icm || null,
+          manager_1 || null,
+          manager_2 || null,
+          registered_street_address || null,
+          registered_city || null,
+          registered_zipcode || null,
+          registered_country || null,
+          icm_signatory_name || null,
+          icm_signatory_title || null,
+          icm_contractual_address || null,
+          icm_signatory_phone || null,
+          icm_signatory_email || null,
+          icm_billing_name || null,
+          icm_billing_title || null,
+          icm_billing_address || null,
+          icm_billing_phone || null,
+          icm_billing_email || null,
+          id,
+        ]
       );
     });
-
-    updateTransaction();
 
     await logAudit(
       "UPDATE",
@@ -114,10 +115,7 @@ export async function PUT(
     return NextResponse.json({ message: "Business unit updated" });
   } catch (error: unknown) {
     console.error("Error updating business unit:", error);
-    if (
-      error instanceof Error &&
-      error.message.includes("UNIQUE constraint")
-    ) {
+    if ((error as any).code === '23505') {
       return NextResponse.json(
         { error: "A business unit with that short name already exists" },
         { status: 409 }
@@ -137,9 +135,10 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    const unit = db
-      .prepare("SELECT short_name FROM business_units WHERE id = ?")
-      .get(id) as { short_name: string } | undefined;
+    const unit = await queryOne<{ short_name: string }>(
+      "SELECT short_name FROM business_units WHERE id = $1",
+      [id]
+    );
 
     if (!unit) {
       return NextResponse.json(
@@ -148,16 +147,18 @@ export async function DELETE(
       );
     }
 
-    const deleteTransaction = db.transaction(() => {
+    await withTransaction(async (client) => {
       // Clear business_unit for associated people
-      db.prepare(
-        "UPDATE people SET business_unit = NULL, updated_at = datetime('now') WHERE business_unit = ?"
-      ).run(unit.short_name);
+      await client.query(
+        "UPDATE people SET business_unit = NULL, updated_at = NOW() WHERE business_unit = $1",
+        [unit.short_name]
+      );
       // Delete the business unit
-      db.prepare("DELETE FROM business_units WHERE id = ?").run(id);
+      await client.query(
+        "DELETE FROM business_units WHERE id = $1",
+        [id]
+      );
     });
-
-    deleteTransaction();
 
     await logAudit(
       "DELETE",

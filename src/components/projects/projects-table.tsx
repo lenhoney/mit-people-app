@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import {
   Table,
   TableBody,
@@ -246,8 +246,8 @@ export function ProjectsTable({
             <TableBody>
               {/* Grouped projects */}
               {groups.sortedGroups.map(([groupLabel, groupProjects]) => (
-                <>{/* Group header */}
-                  <TableRow key={`gh-${groupLabel}`} className="bg-muted/30">
+                <Fragment key={groupLabel}>{/* Group header */}
+                  <TableRow className="bg-muted/30">
                     <TableCell
                       colSpan={7}
                       className="font-medium text-sm py-2"
@@ -259,7 +259,7 @@ export function ProjectsTable({
                     </TableCell>
                   </TableRow>
                   {groupProjects.map(renderProjectRow)}
-                </>
+                </Fragment>
               ))}
               {/* Ungrouped projects */}
               {groups.ungrouped.length > 0 && groups.sortedGroups.length > 0 && (

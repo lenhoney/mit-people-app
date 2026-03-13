@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/lib/db";
+import { query, queryOne } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,48 +13,45 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1");
     const pageSize = parseInt(searchParams.get("pageSize") || "50");
 
-    let query = "SELECT * FROM timesheets WHERE 1=1";
-    let countQuery = "SELECT COUNT(*) as total FROM timesheets WHERE 1=1";
-    const params: Record<string, string | number> = {};
+    let paramIdx = 1;
+    const params: unknown[] = [];
+    const conditions: string[] = [];
 
     if (user) {
-      query += " AND user_name LIKE @user";
-      countQuery += " AND user_name LIKE @user";
-      params.user = `%${user}%`;
+      conditions.push(`user_name ILIKE $${paramIdx++}`);
+      params.push(`%${user}%`);
     }
     if (project) {
-      query += " AND (task_description LIKE @project OR task_number LIKE @project)";
-      countQuery += " AND (task_description LIKE @project OR task_number LIKE @project)";
-      params.project = `%${project}%`;
+      conditions.push(`(task_description ILIKE $${paramIdx} OR task_number ILIKE $${paramIdx})`);
+      params.push(`%${project}%`);
+      paramIdx++;
     }
     if (category) {
-      query += " AND category = @category";
-      countQuery += " AND category = @category";
-      params.category = category;
+      conditions.push(`category = $${paramIdx++}`);
+      params.push(category);
     }
     if (startDate) {
-      query += " AND week_starts_on >= @startDate";
-      countQuery += " AND week_starts_on >= @startDate";
-      params.startDate = startDate;
+      conditions.push(`week_starts_on >= $${paramIdx++}`);
+      params.push(startDate);
     }
     if (endDate) {
-      query += " AND week_starts_on <= @endDate";
-      countQuery += " AND week_starts_on <= @endDate";
-      params.endDate = endDate;
+      conditions.push(`week_starts_on <= $${paramIdx++}`);
+      params.push(endDate);
     }
-    if (clientId) {
-      query += " AND task_number IN (SELECT task_number FROM projects WHERE client_id = @clientId)";
-      countQuery += " AND task_number IN (SELECT task_number FROM projects WHERE client_id = @clientId)";
-      params.clientId = Number(clientId);
+    if (clientId && clientId !== "null" && clientId !== "undefined") {
+      conditions.push(`task_number IN (SELECT task_number FROM projects WHERE client_id = $${paramIdx++})`);
+      params.push(Number(clientId));
     }
 
-    const totalRow = db.prepare(countQuery).get(params) as { total: number };
-    const total = totalRow.total;
+    const whereClause = conditions.length > 0 ? " WHERE " + conditions.join(" AND ") : "";
 
-    query += " ORDER BY week_starts_on DESC, user_name ASC";
-    query += ` LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`;
+    const countQuery = `SELECT COUNT(*) as total FROM timesheets${whereClause}`;
+    const totalRow = await queryOne<{ total: string }>(countQuery, params);
+    const total = Number(totalRow?.total ?? 0);
 
-    const timesheets = db.prepare(query).all(params);
+    const dataQuery = `SELECT * FROM timesheets${whereClause} ORDER BY week_starts_on DESC, user_name ASC LIMIT $${paramIdx++} OFFSET $${paramIdx++}`;
+    const dataParams = [...params, pageSize, (page - 1) * pageSize];
+    const timesheets = await query(dataQuery, dataParams);
 
     return NextResponse.json({
       data: timesheets,

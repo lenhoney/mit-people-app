@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/lib/db";
+import { query, execute } from "@/lib/db";
 
 export async function GET() {
   try {
-    const countries = db.prepare("SELECT * FROM countries ORDER BY name ASC").all();
+    const countries = await query("SELECT * FROM countries ORDER BY name ASC");
     return NextResponse.json(countries);
   } catch (error) {
     console.error("Error fetching countries:", error);
@@ -20,13 +20,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Country name and code are required" }, { status: 400 });
     }
 
-    const stmt = db.prepare("INSERT INTO countries (name, code) VALUES (?, ?)");
-    const result = stmt.run(name, code.toUpperCase());
+    const result = await execute(
+      "INSERT INTO countries (name, code) VALUES ($1, $2) RETURNING id",
+      [name, code.toUpperCase()]
+    );
 
-    return NextResponse.json({ id: result.lastInsertRowid, message: "Country added" }, { status: 201 });
+    return NextResponse.json({ id: result.rows[0].id, message: "Country added" }, { status: 201 });
   } catch (error: unknown) {
     console.error("Error adding country:", error);
-    if (error instanceof Error && error.message.includes("UNIQUE constraint")) {
+    if ((error as any).code === '23505') {
       return NextResponse.json({ error: "Country already exists" }, { status: 409 });
     }
     return NextResponse.json({ error: "Failed to add country" }, { status: 500 });

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/lib/db";
+import { withTransaction } from "@/lib/db";
 import { parsePeopleRates, makeFY, dateToFYEndYear } from "@/lib/excel-parser";
 import { logAudit } from "@/lib/audit";
 
@@ -24,41 +24,35 @@ export async function POST(request: NextRequest) {
     const buffer = await file.arrayBuffer();
     const rows = parsePeopleRates(buffer);
 
-    // Upsert people: on conflict, update fields but NEVER overwrite status
-    // (status is only changed manually via the Edit Person dialog)
-    const upsertPersonStmt = db.prepare(`
-      INSERT INTO people (person, sow, role, kerb, managed_services, architecture, app_support, computing, status)
-      VALUES (@person, @sow, @role, @kerb, @managed_services, @architecture, @app_support, @computing, 'Active')
-      ON CONFLICT(person) DO UPDATE SET
-        sow = excluded.sow,
-        role = excluded.role,
-        kerb = excluded.kerb,
-        managed_services = excluded.managed_services,
-        architecture = excluded.architecture,
-        app_support = excluded.app_support,
-        computing = excluded.computing,
-        updated_at = datetime('now')
-    `);
-
-    const getPersonId = db.prepare("SELECT id FROM people WHERE person = ?");
-
-    const upsertRateStmt = db.prepare(`
-      INSERT INTO people_rates (person_id, fy_start, fy_end, fy_label, rate)
-      VALUES (@person_id, @fy_start, @fy_end, @fy_label, @rate)
-      ON CONFLICT(person_id, fy_label) DO UPDATE SET
-        rate = excluded.rate,
-        fy_start = excluded.fy_start,
-        fy_end = excluded.fy_end
-    `);
-
     let insertedPeople = 0;
     let updatedPeople = 0;
     let ratesSet = 0;
 
-    const transaction = db.transaction(() => {
+    await withTransaction(async (client) => {
       for (const row of rows) {
-        const existing = getPersonId.get(row.person) as { id: number } | undefined;
-        upsertPersonStmt.run(row);
+        // Check if person already exists
+        const existingResult = await client.query(
+          "SELECT id FROM people WHERE person = $1",
+          [row.person]
+        );
+        const existing = existingResult.rows[0] as { id: number } | undefined;
+
+        // Upsert person: on conflict, update fields but NEVER overwrite status
+        // (status is only changed manually via the Edit Person dialog)
+        await client.query(
+          `INSERT INTO people (person, sow, role, kerb, managed_services, architecture, app_support, computing, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Active')
+           ON CONFLICT(person) DO UPDATE SET
+             sow = EXCLUDED.sow,
+             role = EXCLUDED.role,
+             kerb = EXCLUDED.kerb,
+             managed_services = EXCLUDED.managed_services,
+             architecture = EXCLUDED.architecture,
+             app_support = EXCLUDED.app_support,
+             computing = EXCLUDED.computing,
+             updated_at = NOW()`,
+          [row.person, row.sow, row.role, row.kerb, row.managed_services, row.architecture, row.app_support, row.computing]
+        );
 
         if (existing) {
           updatedPeople++;
@@ -66,22 +60,27 @@ export async function POST(request: NextRequest) {
           insertedPeople++;
         }
 
-        const personRow = getPersonId.get(row.person) as { id: number };
+        // Get the person id (either existing or newly inserted)
+        const personResult = await client.query(
+          "SELECT id FROM people WHERE person = $1",
+          [row.person]
+        );
+        const personRow = personResult.rows[0] as { id: number };
 
         if (row.rate !== null && row.rate > 0) {
-          upsertRateStmt.run({
-            person_id: personRow.id,
-            fy_start: fy.fy_start,
-            fy_end: fy.fy_end,
-            fy_label: fy.fy_label,
-            rate: row.rate,
-          });
+          await client.query(
+            `INSERT INTO people_rates (person_id, fy_start, fy_end, fy_label, rate)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT(person_id, fy_label) DO UPDATE SET
+               rate = EXCLUDED.rate,
+               fy_start = EXCLUDED.fy_start,
+               fy_end = EXCLUDED.fy_end`,
+            [personRow.id, fy.fy_start, fy.fy_end, fy.fy_label, row.rate]
+          );
           ratesSet++;
         }
       }
     });
-
-    transaction();
 
     await logAudit("CREATE", "people_upload", null, `Uploaded ${rows.length} people (${insertedPeople} new, ${updatedPeople} updated, ${ratesSet} rates set) for ${fy.fy_label}`);
     return NextResponse.json({

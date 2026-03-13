@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/lib/db";
+import { queryOne, withTransaction } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 
 export async function PUT(
@@ -12,9 +12,10 @@ export async function PUT(
     const { task_number, task_description, group_label, budget, status, project_lead, client_id } = body;
 
     // Look up existing project
-    const existing = db
-      .prepare("SELECT task_number FROM projects WHERE id = ?")
-      .get(id) as { task_number: string } | undefined;
+    const existing = await queryOne<{ task_number: string }>(
+      "SELECT task_number FROM projects WHERE id = $1",
+      [id]
+    );
 
     if (!existing) {
       return NextResponse.json(
@@ -27,51 +28,49 @@ export async function PUT(
     const newTaskNumber = task_number || oldTaskNumber;
 
     // Use a transaction for cascade updates
-    const updateTransaction = db.transaction(() => {
+    await withTransaction(async (client) => {
       // If task_number changed, cascade to timesheets and planned_work
       if (newTaskNumber !== oldTaskNumber) {
-        db.prepare(
-          "UPDATE timesheets SET task_number = ?, updated_at = datetime('now') WHERE task_number = ?"
-        ).run(newTaskNumber, oldTaskNumber);
-        db.prepare(
-          "UPDATE planned_work SET task_number = ?, updated_at = datetime('now') WHERE task_number = ?"
-        ).run(newTaskNumber, oldTaskNumber);
+        await client.query(
+          "UPDATE timesheets SET task_number = $1, updated_at = NOW() WHERE task_number = $2",
+          [newTaskNumber, oldTaskNumber]
+        );
+        await client.query(
+          "UPDATE planned_work SET task_number = $1, updated_at = NOW() WHERE task_number = $2",
+          [newTaskNumber, oldTaskNumber]
+        );
       }
 
       // Update the project record
-      db.prepare(
+      await client.query(
         `UPDATE projects SET
-          task_number = ?,
-          task_description = ?,
-          group_label = ?,
-          budget = ?,
-          status = ?,
-          project_lead = ?,
-          client_id = ?,
-          updated_at = datetime('now')
-        WHERE id = ?`
-      ).run(
-        newTaskNumber,
-        task_description ?? null,
-        group_label || null,
-        budget != null && budget !== "" ? Number(budget) : null,
-        status || "Started",
-        project_lead || null,
-        client_id ?? null,
-        id
+          task_number = $1,
+          task_description = $2,
+          group_label = $3,
+          budget = $4,
+          status = $5,
+          project_lead = $6,
+          client_id = $7,
+          updated_at = NOW()
+        WHERE id = $8`,
+        [
+          newTaskNumber,
+          task_description ?? null,
+          group_label || null,
+          budget != null && budget !== "" ? Number(budget) : null,
+          status || "Started",
+          project_lead || null,
+          client_id ?? null,
+          id,
+        ]
       );
     });
-
-    updateTransaction();
 
     await logAudit("UPDATE", "project", id, `Updated project: ${newTaskNumber}`);
     return NextResponse.json({ message: "Project updated" });
   } catch (error: unknown) {
     console.error("Error updating project:", error);
-    if (
-      error instanceof Error &&
-      error.message.includes("UNIQUE constraint")
-    ) {
+    if ((error as any).code === '23505') {
       return NextResponse.json(
         { error: "A project with that code already exists" },
         { status: 409 }
@@ -91,9 +90,10 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    const project = db
-      .prepare("SELECT task_number FROM projects WHERE id = ?")
-      .get(id) as { task_number: string } | undefined;
+    const project = await queryOne<{ task_number: string }>(
+      "SELECT task_number FROM projects WHERE id = $1",
+      [id]
+    );
 
     if (!project) {
       return NextResponse.json(
@@ -102,20 +102,23 @@ export async function DELETE(
       );
     }
 
-    const deleteTransaction = db.transaction(() => {
+    await withTransaction(async (client) => {
       // Delete associated timesheets
-      db.prepare("DELETE FROM timesheets WHERE task_number = ?").run(
-        project.task_number
+      await client.query(
+        "DELETE FROM timesheets WHERE task_number = $1",
+        [project.task_number]
       );
       // Delete associated planned work
-      db.prepare("DELETE FROM planned_work WHERE task_number = ?").run(
-        project.task_number
+      await client.query(
+        "DELETE FROM planned_work WHERE task_number = $1",
+        [project.task_number]
       );
       // Delete the project
-      db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+      await client.query(
+        "DELETE FROM projects WHERE id = $1",
+        [id]
+      );
     });
-
-    deleteTransaction();
 
     await logAudit("DELETE", "project", id, `Deleted project: ${project.task_number}`);
     return NextResponse.json({ message: "Project deleted" });

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/lib/db";
+import { queryOne, execute } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 import fs from "fs";
 import path from "path";
@@ -18,9 +18,9 @@ export async function POST(
   try {
     const { id } = await params;
 
-    const client = db
-      .prepare("SELECT id, short_name FROM clients WHERE id = ?")
-      .get(id) as { id: number; short_name: string } | undefined;
+    const client = await queryOne<{ id: number; short_name: string }>(
+      "SELECT id, short_name FROM clients WHERE id = $1", [id]
+    );
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -53,9 +53,9 @@ export async function POST(
     const filepath = path.join(LOGOS_DIR, filename);
 
     // Remove any existing logo for this client
-    const existingLogo = db
-      .prepare("SELECT logo FROM clients WHERE id = ?")
-      .get(id) as { logo: string | null } | undefined;
+    const existingLogo = await queryOne<{ logo: string | null }>(
+      "SELECT logo FROM clients WHERE id = $1", [id]
+    );
     if (existingLogo?.logo) {
       const oldPath = path.join(LOGOS_DIR, existingLogo.logo);
       if (fs.existsSync(oldPath)) {
@@ -68,9 +68,10 @@ export async function POST(
     fs.writeFileSync(filepath, buffer);
 
     // Update database
-    db.prepare(
-      "UPDATE clients SET logo = ?, updated_at = datetime('now') WHERE id = ?"
-    ).run(filename, id);
+    await execute(
+      "UPDATE clients SET logo = $1, updated_at = NOW() WHERE id = $2",
+      [filename, id]
+    );
 
     await logAudit(
       "UPDATE",
@@ -95,9 +96,9 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    const client = db
-      .prepare("SELECT logo FROM clients WHERE id = ?")
-      .get(id) as { logo: string | null } | undefined;
+    const client = await queryOne<{ logo: string | null }>(
+      "SELECT logo FROM clients WHERE id = $1", [id]
+    );
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -109,9 +110,10 @@ export async function DELETE(
       }
     }
 
-    db.prepare(
-      "UPDATE clients SET logo = NULL, updated_at = datetime('now') WHERE id = ?"
-    ).run(id);
+    await execute(
+      "UPDATE clients SET logo = NULL, updated_at = NOW() WHERE id = $1",
+      [id]
+    );
 
     await logAudit(
       "DELETE",

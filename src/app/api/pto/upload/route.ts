@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/lib/db";
+import { withTransaction } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 
 interface PTORow {
@@ -166,46 +166,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Prepare statements
-    const findPersonByKerb = db.prepare(
-      "SELECT id, person FROM people WHERE LOWER(kerb) = LOWER(?)"
-    );
-
-    const upsertStmt = db.prepare(`
-      INSERT INTO personal_time_off (person_id, person_name, kerb, start_date, end_date, type, leave_status, country, message, business_days)
-      VALUES (@person_id, @person_name, @kerb, @start_date, @end_date, @type, @leave_status, @country, @message, @business_days)
-      ON CONFLICT(COALESCE(kerb, ''), COALESCE(person_name, ''), start_date, end_date, type, COALESCE(country, '')) DO UPDATE SET
-        person_id = excluded.person_id,
-        leave_status = excluded.leave_status,
-        message = excluded.message,
-        business_days = excluded.business_days,
-        updated_at = datetime('now')
-    `);
-
     let inserted = 0;
     let updated = 0;
     let skipped = 0;
     let matched = 0;
     let unmatched = 0;
 
-    // ── Pass 2 helpers: compute billable_days ──────────────────────────
-    // Find National Holiday entries for a given country that overlap a date range
-    const findOverlappingHolidays = db.prepare(`
-      SELECT start_date, end_date
-      FROM personal_time_off
-      WHERE type = 'National Holiday'
-        AND country = @country
-        AND start_date <= @leave_end
-        AND end_date >= @leave_start
-    `);
-
-    const updateBillableDays = db.prepare(`
-      UPDATE personal_time_off
-      SET billable_days = @billable_days, updated_at = datetime('now')
-      WHERE id = @id
-    `);
-
-    const transaction = db.transaction(() => {
+    await withTransaction(async (client) => {
       // ── Pass 1: Insert/upsert all rows ──────────────────────────────
       for (const row of rows) {
         // Try to match kerb to people table
@@ -213,7 +180,11 @@ export async function POST(request: NextRequest) {
         let personName = row.person_name;
 
         if (row.kerb) {
-          const person = findPersonByKerb.get(row.kerb) as
+          const personResult = await client.query(
+            "SELECT id, person FROM people WHERE LOWER(kerb) = LOWER($1)",
+            [row.kerb]
+          );
+          const person = personResult.rows[0] as
             | { id: number; person: string }
             | undefined;
           if (person) {
@@ -232,24 +203,24 @@ export async function POST(request: NextRequest) {
         const bizDays = businessDaysBetween(row.start_date, row.end_date);
 
         // Check if row already exists for upsert tracking (use COALESCE for NULL handling)
-        const existing = db
-          .prepare(
-            "SELECT id FROM personal_time_off WHERE COALESCE(kerb, '') = ? AND COALESCE(person_name, '') = ? AND start_date = ? AND end_date = ? AND type = ? AND COALESCE(country, '') = ?"
-          )
-          .get(row.kerb || '', personName || '', row.start_date, row.end_date, row.type, row.country || '');
+        const existingResult = await client.query(
+          "SELECT id FROM personal_time_off WHERE COALESCE(kerb, '') = $1 AND COALESCE(person_name, '') = $2 AND start_date = $3 AND end_date = $4 AND type = $5 AND COALESCE(country, '') = $6",
+          [row.kerb || '', personName || '', row.start_date, row.end_date, row.type, row.country || '']
+        );
+        const existing = existingResult.rows[0];
 
-        upsertStmt.run({
-          person_id: personId,
-          person_name: personName,
-          kerb: row.kerb || null,
-          start_date: row.start_date,
-          end_date: row.end_date,
-          type: row.type,
-          leave_status: row.leave_status || null,
-          country: row.country || null,
-          message: row.message || null,
-          business_days: bizDays,
-        });
+        // Upsert PTO entry
+        await client.query(
+          `INSERT INTO personal_time_off (person_id, person_name, kerb, start_date, end_date, type, leave_status, country, message, business_days)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           ON CONFLICT(COALESCE(kerb, ''), COALESCE(person_name, ''), start_date, end_date, type, COALESCE(country, '')) DO UPDATE SET
+             person_id = EXCLUDED.person_id,
+             leave_status = EXCLUDED.leave_status,
+             message = EXCLUDED.message,
+             business_days = EXCLUDED.business_days,
+             updated_at = NOW()`,
+          [personId, personName, row.kerb || null, row.start_date, row.end_date, row.type, row.leave_status || null, row.country || null, row.message || null, bizDays]
+        );
 
         if (existing) {
           updated++;
@@ -261,13 +232,12 @@ export async function POST(request: NextRequest) {
       // ── Pass 2: Compute billable_days for ALL Personal/Sick entries ──
       // We recompute all entries (not just newly inserted) because new
       // holiday entries may affect previously uploaded leave entries.
-      const personalSickEntries = db
-        .prepare(
-          `SELECT id, start_date, end_date, business_days, country
-           FROM personal_time_off
-           WHERE type IN ('Personal', 'Sick')`
-        )
-        .all() as {
+      const personalSickResult = await client.query(
+        `SELECT id, start_date, end_date, business_days, country
+         FROM personal_time_off
+         WHERE type IN ('Personal', 'Sick')`
+      );
+      const personalSickEntries = personalSickResult.rows as {
         id: number;
         start_date: string;
         end_date: string;
@@ -278,18 +248,26 @@ export async function POST(request: NextRequest) {
       for (const entry of personalSickEntries) {
         if (!entry.country) {
           // No country → can't match holidays → billable = business
-          updateBillableDays.run({
-            billable_days: entry.business_days,
-            id: entry.id,
-          });
+          await client.query(
+            `UPDATE personal_time_off
+             SET billable_days = $1, updated_at = NOW()
+             WHERE id = $2`,
+            [entry.business_days, entry.id]
+          );
           continue;
         }
 
-        const holidays = findOverlappingHolidays.all({
-          country: entry.country,
-          leave_start: entry.start_date,
-          leave_end: entry.end_date,
-        }) as { start_date: string; end_date: string }[];
+        // Find National Holiday entries for a given country that overlap a date range
+        const holidaysResult = await client.query(
+          `SELECT start_date, end_date
+           FROM personal_time_off
+           WHERE type = 'National Holiday'
+             AND country = $1
+             AND start_date <= $2
+             AND end_date >= $3`,
+          [entry.country, entry.end_date, entry.start_date]
+        );
+        const holidays = holidaysResult.rows as { start_date: string; end_date: string }[];
 
         // Collect unique weekday holiday dates within the leave period
         const holidayDates = new Set<string>();
@@ -317,17 +295,20 @@ export async function POST(request: NextRequest) {
         }
 
         const billable = Math.max(0, entry.business_days - holidayDates.size);
-        updateBillableDays.run({ billable_days: billable, id: entry.id });
+        await client.query(
+          `UPDATE personal_time_off
+           SET billable_days = $1, updated_at = NOW()
+           WHERE id = $2`,
+          [billable, entry.id]
+        );
       }
 
       // National Holiday entries: billable_days = 0
-      db.prepare(
-        `UPDATE personal_time_off SET billable_days = 0, updated_at = datetime('now')
+      await client.query(
+        `UPDATE personal_time_off SET billable_days = 0, updated_at = NOW()
          WHERE type = 'National Holiday'`
-      ).run();
+      );
     });
-
-    transaction();
 
     await logAudit("CREATE", "pto_upload", null, `Uploaded ${rows.length} PTO entries (${inserted} new, ${updated} updated, ${matched} matched, ${unmatched} unmatched)`);
     return NextResponse.json({

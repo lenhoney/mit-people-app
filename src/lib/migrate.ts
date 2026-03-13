@@ -1,18 +1,18 @@
-import Database from "better-sqlite3";
+import { Pool } from "pg";
 import fs from "fs";
 import path from "path";
 
 const MIGRATIONS_DIR = path.join(process.cwd(), "migrations");
 
-export function runMigrations(db: Database.Database): void {
+export async function runMigrations(pool: Pool): Promise<void> {
   // Create tracking table for applied migrations
-  db.prepare(`
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS _migrations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       name TEXT UNIQUE NOT NULL,
-      applied_at TEXT DEFAULT (datetime('now'))
+      applied_at TIMESTAMPTZ DEFAULT NOW()
     )
-  `).run();
+  `);
 
   if (!fs.existsSync(MIGRATIONS_DIR)) {
     return;
@@ -24,8 +24,9 @@ export function runMigrations(db: Database.Database): void {
     .sort();
 
   const applied = new Set(
-    (db.prepare("SELECT name FROM _migrations").all() as { name: string }[])
-      .map((r) => r.name)
+    (await pool.query("SELECT name FROM _migrations")).rows.map(
+      (r: { name: string }) => r.name
+    )
   );
 
   for (const file of files) {
@@ -34,21 +35,29 @@ export function runMigrations(db: Database.Database): void {
     }
 
     const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), "utf-8");
+    const client = await pool.connect();
 
-    const applyMigration = db.transaction(() => {
+    try {
+      await client.query("BEGIN");
+
       const statements = sql
         .split(";")
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
 
       for (const statement of statements) {
-        db.prepare(statement).run();
+        await client.query(statement);
       }
 
-      db.prepare("INSERT INTO _migrations (name) VALUES (?)").run(file);
-    });
-
-    applyMigration();
-    console.log(`Migration applied: ${file}`);
+      await client.query("INSERT INTO _migrations (name) VALUES ($1)", [file]);
+      await client.query("COMMIT");
+      console.log(`Migration applied: ${file}`);
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error(`Migration failed: ${file}`, err);
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/lib/db";
+import { query } from "@/lib/db";
 
 interface PTOPersonSummary {
   person_name: string;
@@ -42,19 +42,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Build WHERE clause
-    let whereClause = "WHERE pto.end_date >= @startDate AND pto.start_date <= @endDate";
-    const params: Record<string, string> = { startDate, endDate };
+    // Build WHERE clause with positional params
+    let paramIdx = 0;
+    const params: (string | number)[] = [];
+
+    let whereClause = `WHERE pto.end_date >= $${++paramIdx} AND pto.start_date <= $${++paramIdx}`;
+    params.push(startDate, endDate);
 
     if (person) {
+      const personParam = `$${++paramIdx}`;
       whereClause +=
-        " AND (pto.person_name LIKE @person OR p.person LIKE @person OR pto.kerb LIKE @person)";
-      params.person = `%${person}%`;
+        ` AND (pto.person_name ILIKE ${personParam} OR p.person ILIKE ${personParam} OR pto.kerb ILIKE ${personParam})`;
+      params.push(`%${person}%`);
     }
 
     if (type && type !== "all") {
-      whereClause += " AND pto.type = @type";
-      params.type = type;
+      whereClause += ` AND pto.type = $${++paramIdx}`;
+      params.push(type);
     }
 
     // Detail query
@@ -69,7 +73,7 @@ export async function GET(request: NextRequest) {
       ORDER BY pto.start_date ASC, pto.person_name ASC
     `;
 
-    const details = db.prepare(detailQuery).all(params) as PTODetail[];
+    const details = await query<PTODetail>(detailQuery, params);
 
     // Summary query: aggregate per person
     const summaryQuery = `
@@ -89,7 +93,7 @@ export async function GET(request: NextRequest) {
       ORDER BY total_business_days DESC
     `;
 
-    const summary = db.prepare(summaryQuery).all(params) as {
+    const summary = await query<{
       display_name: string;
       person_id: number | null;
       total_entries: number;
@@ -98,7 +102,7 @@ export async function GET(request: NextRequest) {
       sick_days: number;
       holiday_days: number;
       total_billable_days: number;
-    }[];
+    }>(summaryQuery, params);
 
     // Totals
     const totalDays = details.reduce((sum, d) => sum + d.business_days, 0);

@@ -6,8 +6,9 @@ services:
       APP_BASE_URL: ${APP_BASE_URL}
       AUTH0_DOMAIN: ${AUTH0_DOMAIN}
       AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID}
-      AUTH0_CLIENT_SECRET: ${AUTH0_CLIENT_SECRET}
+      AUTH0_CLIENT_SECRET: ${AUTH0_SECRET}
       AUTH0_SECRET: ${AUTH0_SECRET}
+      DATABASE_URL: postgresql://populus:${POSTGRES_PASSWORD}@db:5432/populus
     volumes:
       - populus_data:/app/data
     ports:
@@ -19,6 +20,9 @@ services:
       retries: 3
       start_period: 30s
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - populus-network
     deploy:
@@ -35,8 +39,35 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  db:
+    image: postgres:16-alpine
+    container_name: populus-db
+    environment:
+      POSTGRES_USER: populus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: populus
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U populus"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - populus-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
 volumes:
   populus_data:
+    driver: local
+  postgres_data:
     driver: local
 
 networks:

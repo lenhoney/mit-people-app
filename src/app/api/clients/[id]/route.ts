@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/lib/db";
+import { queryOne, withTransaction } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 
 export async function PUT(
@@ -11,9 +11,10 @@ export async function PUT(
     const body = await request.json();
     const { name, short_name, contact_person, contact_email, business_unit_ids } = body;
 
-    const existing = db
-      .prepare("SELECT id FROM clients WHERE id = ?")
-      .get(id) as { id: number } | undefined;
+    const existing = await queryOne<{ id: number }>(
+      "SELECT id FROM clients WHERE id = $1",
+      [id]
+    );
 
     if (!existing) {
       return NextResponse.json(
@@ -22,36 +23,40 @@ export async function PUT(
       );
     }
 
-    const updateTransaction = db.transaction(() => {
-      db.prepare(
+    await withTransaction(async (client) => {
+      await client.query(
         `UPDATE clients SET
-          name = ?,
-          short_name = ?,
-          contact_person = ?,
-          contact_email = ?,
-          updated_at = datetime('now')
-        WHERE id = ?`
-      ).run(
-        name || null,
-        short_name?.trim() || null,
-        contact_person || null,
-        contact_email || null,
-        id
+          name = $1,
+          short_name = $2,
+          contact_person = $3,
+          contact_email = $4,
+          updated_at = NOW()
+        WHERE id = $5`,
+        [
+          name || null,
+          short_name?.trim() || null,
+          contact_person || null,
+          contact_email || null,
+          id,
+        ]
       );
 
       // Replace business unit associations
       if (business_unit_ids && Array.isArray(business_unit_ids)) {
-        db.prepare("DELETE FROM business_unit_clients WHERE client_id = ?").run(id);
-        const insertBuc = db.prepare(
-          `INSERT OR IGNORE INTO business_unit_clients (business_unit_id, client_id) VALUES (?, ?)`
+        await client.query(
+          "DELETE FROM business_unit_clients WHERE client_id = $1",
+          [id]
         );
         for (const buId of business_unit_ids) {
-          insertBuc.run(buId, id);
+          await client.query(
+            `INSERT INTO business_unit_clients (business_unit_id, client_id)
+             VALUES ($1, $2)
+             ON CONFLICT DO NOTHING`,
+            [buId, id]
+          );
         }
       }
     });
-
-    updateTransaction();
 
     await logAudit(
       "UPDATE",
@@ -62,10 +67,7 @@ export async function PUT(
     return NextResponse.json({ message: "Client updated" });
   } catch (error: unknown) {
     console.error("Error updating client:", error);
-    if (
-      error instanceof Error &&
-      error.message.includes("UNIQUE constraint")
-    ) {
+    if ((error as any).code === '23505') {
       return NextResponse.json(
         { error: "A client with that short name already exists" },
         { status: 409 }
@@ -85,9 +87,10 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    const client = db
-      .prepare("SELECT short_name FROM clients WHERE id = ?")
-      .get(id) as { short_name: string } | undefined;
+    const client = await queryOne<{ short_name: string }>(
+      "SELECT short_name FROM clients WHERE id = $1",
+      [id]
+    );
 
     if (!client) {
       return NextResponse.json(
@@ -96,18 +99,23 @@ export async function DELETE(
       );
     }
 
-    const deleteTransaction = db.transaction(() => {
+    await withTransaction(async (txClient) => {
       // Clear client_id from associated projects
-      db.prepare(
-        "UPDATE projects SET client_id = NULL, updated_at = datetime('now') WHERE client_id = ?"
-      ).run(id);
+      await txClient.query(
+        "UPDATE projects SET client_id = NULL, updated_at = NOW() WHERE client_id = $1",
+        [id]
+      );
       // Remove business unit associations
-      db.prepare("DELETE FROM business_unit_clients WHERE client_id = ?").run(id);
+      await txClient.query(
+        "DELETE FROM business_unit_clients WHERE client_id = $1",
+        [id]
+      );
       // Delete the client
-      db.prepare("DELETE FROM clients WHERE id = ?").run(id);
+      await txClient.query(
+        "DELETE FROM clients WHERE id = $1",
+        [id]
+      );
     });
-
-    deleteTransaction();
 
     await logAudit(
       "DELETE",

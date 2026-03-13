@@ -1,4 +1,4 @@
-import db from "@/lib/db";
+import { execute } from "@/lib/db";
 import { auth0 } from "@/lib/auth0";
 
 /**
@@ -7,7 +7,7 @@ import { auth0 } from "@/lib/auth0";
  * Retrieves the current Auth0 user from the session automatically.
  * Errors are caught and logged — audit failures never break the main operation.
  *
- * @param action    - "CREATE" | "UPDATE" | "DELETE"
+ * @param action    - "CREATE" | "UPDATE" | "DELETE" | "READ"
  * @param entityType - e.g. "person", "project", "timesheet", "planned_work", "pto"
  * @param entityId  - the ID of the affected record (string or null for bulk ops)
  * @param details   - human-readable description of the change
@@ -32,10 +32,11 @@ export async function logAudit(
       // Session unavailable (e.g. during server-side operations) — use "System"
     }
 
-    db.prepare(
+    await execute(
       `INSERT INTO audit_trail (user_name, user_email, action, entity_type, entity_id, details)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(userName, userEmail, action, entityType, entityId?.toString() ?? null, details);
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [userName, userEmail, action, entityType, entityId?.toString() ?? null, details]
+    );
   } catch (err) {
     console.error("Audit trail logging failed:", err);
   }

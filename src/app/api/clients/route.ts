@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/lib/db";
+import { query, withTransaction } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 
 interface ClientRow {
@@ -16,16 +16,14 @@ interface ClientRow {
 
 export async function GET() {
   try {
-    const clients = db
-      .prepare(
-        `SELECT c.*, GROUP_CONCAT(bu.short_name) as business_units
-         FROM clients c
-         LEFT JOIN business_unit_clients buc ON buc.client_id = c.id
-         LEFT JOIN business_units bu ON bu.id = buc.business_unit_id
-         GROUP BY c.id
-         ORDER BY c.name ASC`
-      )
-      .all() as ClientRow[];
+    const clients = await query<ClientRow>(
+      `SELECT c.*, STRING_AGG(bu.short_name::text, ',') as business_units
+       FROM clients c
+       LEFT JOIN business_unit_clients buc ON buc.client_id = c.id
+       LEFT JOIN business_units bu ON bu.id = buc.business_unit_id
+       GROUP BY c.id
+       ORDER BY c.name ASC`
+    );
 
     const result = clients.map((c) => ({
       ...c,
@@ -60,35 +58,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const createTransaction = db.transaction(() => {
-      const result = db
-        .prepare(
-          `INSERT INTO clients (name, short_name, contact_person, contact_email)
-           VALUES (?, ?, ?, ?)`
-        )
-        .run(
+    const clientId = await withTransaction(async (client) => {
+      const result = await client.query(
+        `INSERT INTO clients (name, short_name, contact_person, contact_email)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id`,
+        [
           name.trim(),
           short_name.trim(),
           contact_person || null,
-          contact_email || null
-        );
+          contact_email || null,
+        ]
+      );
 
-      const clientId = result.lastInsertRowid;
+      const newId = result.rows[0].id;
 
       // Insert business unit associations
       if (business_unit_ids && Array.isArray(business_unit_ids)) {
-        const insertBuc = db.prepare(
-          `INSERT OR IGNORE INTO business_unit_clients (business_unit_id, client_id) VALUES (?, ?)`
-        );
         for (const buId of business_unit_ids) {
-          insertBuc.run(buId, clientId);
+          await client.query(
+            `INSERT INTO business_unit_clients (business_unit_id, client_id)
+             VALUES ($1, $2)
+             ON CONFLICT DO NOTHING`,
+            [buId, newId]
+          );
         }
       }
 
-      return clientId;
+      return newId;
     });
-
-    const clientId = createTransaction();
 
     await logAudit(
       "CREATE",
@@ -102,10 +100,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (error: unknown) {
     console.error("Error creating client:", error);
-    if (
-      error instanceof Error &&
-      error.message.includes("UNIQUE constraint")
-    ) {
+    if ((error as any).code === '23505') {
       return NextResponse.json(
         { error: "A client with that short name already exists" },
         { status: 409 }

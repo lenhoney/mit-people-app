@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/lib/db";
+import { queryOne, execute } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 import fs from "fs";
 import path from "path";
@@ -19,7 +19,9 @@ export async function POST(
     const { id } = await params;
 
     // Check person exists
-    const person = db.prepare("SELECT id, person FROM people WHERE id = ?").get(id) as { id: number; person: string } | undefined;
+    const person = await queryOne<{ id: number; person: string }>(
+      "SELECT id, person FROM people WHERE id = $1", [id]
+    );
     if (!person) {
       return NextResponse.json({ error: "Person not found" }, { status: 404 });
     }
@@ -54,7 +56,9 @@ export async function POST(
     const filepath = path.join(PHOTOS_DIR, filename);
 
     // Remove any existing photo for this person
-    const existingPhoto = db.prepare("SELECT photo FROM people WHERE id = ?").get(id) as { photo: string | null } | undefined;
+    const existingPhoto = await queryOne<{ photo: string | null }>(
+      "SELECT photo FROM people WHERE id = $1", [id]
+    );
     if (existingPhoto?.photo) {
       const oldPath = path.join(PHOTOS_DIR, existingPhoto.photo);
       if (fs.existsSync(oldPath)) {
@@ -67,7 +71,10 @@ export async function POST(
     fs.writeFileSync(filepath, buffer);
 
     // Update database with filename
-    db.prepare("UPDATE people SET photo = ?, updated_at = datetime('now') WHERE id = ?").run(filename, id);
+    await execute(
+      "UPDATE people SET photo = $1, updated_at = NOW() WHERE id = $2",
+      [filename, id]
+    );
 
     await logAudit("UPDATE", "person_photo", id, `Uploaded photo for: ${person.person}`);
     return NextResponse.json({
@@ -87,7 +94,9 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    const person = db.prepare("SELECT photo FROM people WHERE id = ?").get(id) as { photo: string | null } | undefined;
+    const person = await queryOne<{ photo: string | null }>(
+      "SELECT photo FROM people WHERE id = $1", [id]
+    );
     if (!person) {
       return NextResponse.json({ error: "Person not found" }, { status: 404 });
     }
@@ -99,7 +108,10 @@ export async function DELETE(
       }
     }
 
-    db.prepare("UPDATE people SET photo = NULL, updated_at = datetime('now') WHERE id = ?").run(id);
+    await execute(
+      "UPDATE people SET photo = NULL, updated_at = NOW() WHERE id = $1",
+      [id]
+    );
 
     await logAudit("DELETE", "person_photo", id, `Removed photo for person ID: ${id}`);
     return NextResponse.json({ message: "Photo removed" });

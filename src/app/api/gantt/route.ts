@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db, { cleanupPlannedWork } from "@/lib/db";
+import { query, cleanupPlannedWork } from "@/lib/db";
 
 interface TimesheetRangeRow {
   task_number: string;
@@ -25,7 +25,7 @@ interface PlannedWorkRow {
 export async function GET(request: NextRequest) {
   try {
     // Clean up past-dated planned work before returning data
-    cleanupPlannedWork();
+    await cleanupPlannedWork();
 
     const { searchParams } = new URL(request.url);
     const viewMode = searchParams.get("view") || "project";
@@ -35,7 +35,27 @@ export async function GET(request: NextRequest) {
 
     // Query 1: Get actual date ranges per person per project from timesheets
     // Exclude projects with 'Completed' status
-    let timesheetQuery = `
+    let paramIdx = 1;
+    const tsParams: unknown[] = [];
+    const tsConditions: string[] = [];
+
+    if (clientId && clientId !== "null" && clientId !== "undefined") {
+      tsConditions.push(`proj.client_id = $${paramIdx++}`);
+      tsParams.push(Number(clientId));
+    }
+    if (projectFilter) {
+      tsConditions.push(`(t.task_description ILIKE $${paramIdx} OR t.task_number ILIKE $${paramIdx})`);
+      tsParams.push(`%${projectFilter}%`);
+      paramIdx++;
+    }
+    if (personFilter) {
+      tsConditions.push(`t.user_name ILIKE $${paramIdx++}`);
+      tsParams.push(`%${personFilter}%`);
+    }
+
+    const tsExtraWhere = tsConditions.length > 0 ? " AND " + tsConditions.join(" AND ") : "";
+
+    const timesheetQuery = `
       SELECT
         t.task_number,
         t.task_description,
@@ -52,36 +72,37 @@ export async function GET(request: NextRequest) {
         AND t.task_number != ''
         AND COALESCE(p.status, 'Active') = 'Active'
         AND COALESCE(proj.status, 'Started') = 'Started'
+        ${tsExtraWhere}
+      GROUP BY t.task_number, t.task_description, t.user_name, p.id
+      ${viewMode === "people"
+        ? "ORDER BY t.user_name, t.task_description"
+        : "ORDER BY t.task_description, t.user_name"}
     `;
-    const params: Record<string, string | number> = {};
 
-    if (clientId) {
-      timesheetQuery += " AND proj.client_id = @clientId";
-      params.clientId = Number(clientId);
-    }
-    if (projectFilter) {
-      timesheetQuery +=
-        " AND (t.task_description LIKE @project OR t.task_number LIKE @project)";
-      params.project = `%${projectFilter}%`;
-    }
-    if (personFilter) {
-      timesheetQuery += " AND t.user_name LIKE @person";
-      params.person = `%${personFilter}%`;
-    }
-
-    timesheetQuery +=
-      " GROUP BY t.task_number, t.task_description, t.user_name, p.id";
-    timesheetQuery +=
-      viewMode === "people"
-        ? " ORDER BY t.user_name, t.task_description"
-        : " ORDER BY t.task_description, t.user_name";
-
-    const timesheetRows = db
-      .prepare(timesheetQuery)
-      .all(params) as TimesheetRangeRow[];
+    const timesheetRows = await query<TimesheetRangeRow>(timesheetQuery, tsParams);
 
     // Query 2: Get all planned work entries (exclude Completed projects)
-    let plannedQuery = `
+    let plannedParamIdx = 1;
+    const pwParams: unknown[] = [];
+    const pwConditions: string[] = [];
+
+    if (clientId && clientId !== "null" && clientId !== "undefined") {
+      pwConditions.push(`proj.client_id = $${plannedParamIdx++}`);
+      pwParams.push(Number(clientId));
+    }
+    if (projectFilter) {
+      pwConditions.push(`(pw.task_description ILIKE $${plannedParamIdx} OR pw.task_number ILIKE $${plannedParamIdx})`);
+      pwParams.push(`%${projectFilter}%`);
+      plannedParamIdx++;
+    }
+    if (personFilter) {
+      pwConditions.push(`p.person ILIKE $${plannedParamIdx++}`);
+      pwParams.push(`%${personFilter}%`);
+    }
+
+    const pwExtraWhere = pwConditions.length > 0 ? " AND " + pwConditions.join(" AND ") : "";
+
+    const plannedQuery = `
       SELECT pw.id, pw.person_id, p.person as user_name,
              pw.task_number, pw.task_description,
              pw.planned_start, pw.planned_end, pw.allocation_pct
@@ -90,26 +111,10 @@ export async function GET(request: NextRequest) {
       LEFT JOIN projects proj ON pw.task_number = proj.task_number
       WHERE COALESCE(p.status, 'Active') = 'Active'
         AND COALESCE(proj.status, 'Started') = 'Started'
+        ${pwExtraWhere}
     `;
-    const plannedParams: Record<string, string | number> = {};
 
-    if (clientId) {
-      plannedQuery += " AND proj.client_id = @clientId";
-      plannedParams.clientId = Number(clientId);
-    }
-    if (projectFilter) {
-      plannedQuery +=
-        " AND (pw.task_description LIKE @project OR pw.task_number LIKE @project)";
-      plannedParams.project = `%${projectFilter}%`;
-    }
-    if (personFilter) {
-      plannedQuery += " AND p.person LIKE @person";
-      plannedParams.person = `%${personFilter}%`;
-    }
-
-    const plannedRows = db
-      .prepare(plannedQuery)
-      .all(plannedParams) as PlannedWorkRow[];
+    const plannedRows = await query<PlannedWorkRow>(plannedQuery, pwParams);
 
     // Build a lookup map for planned work
     const plannedMap = new Map<string, PlannedWorkRow>();
@@ -118,16 +123,18 @@ export async function GET(request: NextRequest) {
     }
 
     // Build person photo lookup
-    const photoRows = db.prepare("SELECT id, photo FROM people WHERE photo IS NOT NULL").all() as { id: number; photo: string }[];
+    const photoRows = await query<{ id: number; photo: string }>(
+      "SELECT id, photo FROM people WHERE photo IS NOT NULL"
+    );
     const photoMap = new Map<number, string>();
     for (const r of photoRows) {
       photoMap.set(r.id, r.photo);
     }
 
     if (viewMode === "people") {
-      return buildPeopleResponse(timesheetRows, plannedMap, photoMap);
+      return await buildPeopleResponse(timesheetRows, plannedMap, photoMap);
     } else {
-      return buildProjectResponse(timesheetRows, plannedMap, photoMap);
+      return await buildProjectResponse(timesheetRows, plannedMap, photoMap);
     }
   } catch (error) {
     console.error("Error fetching gantt data:", error);
@@ -138,7 +145,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function buildProjectResponse(
+async function buildProjectResponse(
   timesheetRows: TimesheetRangeRow[],
   plannedMap: Map<string, PlannedWorkRow>,
   photoMap: Map<number, string>
@@ -250,9 +257,11 @@ function buildProjectResponse(
   }
 
   // Enrich projects with metadata from the projects table
-  const projectMetadata = db
-    .prepare("SELECT task_number, group_label, budget FROM projects")
-    .all() as { task_number: string; group_label: string | null; budget: number | null }[];
+  const projectMetadata = await query<{
+    task_number: string;
+    group_label: string | null;
+    budget: number | null;
+  }>("SELECT task_number, group_label, budget FROM projects");
   const metaMap = new Map(projectMetadata.map((p) => [p.task_number, p]));
 
   const projects = Array.from(projectMap.values()).map((p) => ({
@@ -283,7 +292,7 @@ function buildProjectResponse(
   });
 }
 
-function buildPeopleResponse(
+async function buildPeopleResponse(
   timesheetRows: TimesheetRangeRow[],
   plannedMap: Map<string, PlannedWorkRow>,
   photoMap: Map<number, string>
