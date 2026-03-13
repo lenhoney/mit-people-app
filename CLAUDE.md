@@ -17,7 +17,7 @@ No test framework is configured yet.
 
 ## Architecture
 
-**Populus** is an HR/project management app built with Next.js 16 (App Router), PostgreSQL (pg), Auth0, and shadcn/ui.
+**Populus** is an HR/project management app built with Next.js 16 (App Router), PostgreSQL (pg), and shadcn/ui.
 
 ### Data Flow
 
@@ -32,7 +32,7 @@ Excel files → `src/lib/excel-parser.ts` → parsed & validated → upserted in
 - `src/lib/migrate.ts` — SQL file migration runner (reads `migrations/*.sql`, tracks in `_migrations` table)
 - `src/lib/sql-helpers.ts` — Shared SQL fragments for PostgreSQL date arithmetic and named-to-positional parameter conversion
 - `src/lib/audit.ts` — Audit trail logging utility
-- `src/lib/auth0.ts` — Auth0 client configuration
+- `src/lib/auth.ts` — Authentication: password hashing, session cookies, user seeding
 - `src/lib/excel-parser.ts` — Excel import parsers for timesheets, rates, PTO
 - `data/` — `photos/` and `logos/` directories for uploaded images
 
@@ -50,7 +50,7 @@ Schema managed via **SQL file migrations** in `migrations/` — numbered files (
 
 ### Auth
 
-Auth0 via `@auth0/nextjs-auth0`. Session checked in `src/proxy.ts` middleware. Root layout passes user to Sidebar.
+Simple cookie-based authentication. Users stored in PostgreSQL with scrypt-hashed passwords. HMAC-SHA256 signed session cookie verified in `src/proxy.ts` middleware. Default admin user auto-seeded on first startup. Login page at `/login`.
 
 ### API Response Pattern
 
@@ -71,10 +71,8 @@ Auth0 via `@auth0/nextjs-auth0`. Session checked in `src/proxy.ts` middleware. R
 
 ```
 APP_BASE_URL        # Application URL
-AUTH0_DOMAIN        # Auth0 tenant domain
-AUTH0_CLIENT_ID     # Auth0 app client ID
-AUTH0_CLIENT_SECRET # Auth0 app secret
-AUTH0_SECRET        # Session encryption key (openssl rand -hex 32)
+SESSION_SECRET      # HMAC signing key for session cookies (openssl rand -hex 32)
+ADMIN_PASSWORD      # Initial admin password (optional, default: changeme)
 DATABASE_URL        # PostgreSQL connection string (e.g. postgresql://user:pass@host:5432/dbname)
 POSTGRES_PASSWORD   # PostgreSQL password (used in compose.yaml)
 ```

@@ -10,11 +10,17 @@ const pool = new Pool({
 
 import { runMigrations } from "./migrate";
 
-// Run migrations on startup (idempotent)
+// Run migrations on startup (resolve early so query helpers unblock),
+// then seed the admin user as a follow-up step.
 const migrationPromise = runMigrations(pool);
-migrationPromise.catch((err) => {
-  console.error("Failed to run migrations:", err);
-});
+migrationPromise
+  .then(async () => {
+    const { seedAdminUser } = await import("./auth");
+    await seedAdminUser();
+  })
+  .catch((err) => {
+    console.error("Failed to initialize:", err);
+  });
 
 /** Ensure migrations have completed before accepting queries */
 async function ensureMigrated(): Promise<void> {

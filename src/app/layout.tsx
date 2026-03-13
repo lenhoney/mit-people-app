@@ -3,7 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ClientProvider } from "@/components/layout/client-provider";
-import { auth0 } from "@/lib/auth0";
+import { getSession } from "@/lib/auth";
+import { headers } from "next/headers";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,21 +26,30 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = await auth0.getSession();
+  const session = await getSession();
+
+  // Check if we're on the login page (no sidebar needed)
+  const headersList = await headers();
+  const pathname = headersList.get("x-pathname") || "";
+  const isLoginPage = pathname === "/login";
 
   return (
     <html lang="en" className="dark" style={{ colorScheme: "dark" }}>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <ClientProvider>
-          <Sidebar user={session?.user ?? null} />
-          <main className="ml-64 min-h-screen">
-            <div className="p-8">
-              {children}
-            </div>
-          </main>
-        </ClientProvider>
+        {isLoginPage || !session ? (
+          <>{children}</>
+        ) : (
+          <ClientProvider>
+            <Sidebar user={session} />
+            <main className="ml-64 min-h-screen">
+              <div className="p-8">
+                {children}
+              </div>
+            </main>
+          </ClientProvider>
+        )}
       </body>
     </html>
   );

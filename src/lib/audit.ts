@@ -1,10 +1,10 @@
 import { execute } from "@/lib/db";
-import { auth0 } from "@/lib/auth0";
+import { getSession } from "@/lib/auth";
 
 /**
  * Log an audit trail entry for a database mutation.
  *
- * Retrieves the current Auth0 user from the session automatically.
+ * Retrieves the current user from the session cookie automatically.
  * Errors are caught and logged — audit failures never break the main operation.
  *
  * @param action    - "CREATE" | "UPDATE" | "DELETE" | "READ"
@@ -23,10 +23,10 @@ export async function logAudit(
     let userEmail: string | null = null;
 
     try {
-      const session = await auth0.getSession();
-      if (session?.user) {
-        userName = session.user.name ?? session.user.nickname ?? session.user.email ?? "Unknown";
-        userEmail = session.user.email ?? null;
+      const session = await getSession();
+      if (session) {
+        userName = session.name ?? session.email ?? "Unknown";
+        userEmail = session.email ?? null;
       }
     } catch {
       // Session unavailable (e.g. during server-side operations) — use "System"

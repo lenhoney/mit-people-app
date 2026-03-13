@@ -20,11 +20,13 @@ const pg = new EmbeddedPostgres({
   user: "populus",
   password: "populus",
   persistent: true,
-  onLog: (msg: string) => {
-    if (msg.trim()) console.log(`[pg] ${msg.trim()}`);
+  onLog: (msg: unknown) => {
+    const s = String(msg).trim();
+    if (s) console.log(`[pg] ${s}`);
   },
-  onError: (msg: string) => {
-    if (msg.trim()) console.error(`[pg:err] ${msg.trim()}`);
+  onError: (msg: unknown) => {
+    const s = String(msg).trim();
+    if (s) console.error(`[pg:err] ${s}`);
   },
 });
 

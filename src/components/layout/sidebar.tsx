@@ -21,12 +21,9 @@ import { useClient } from "./client-provider";
 import { ClientSelector } from "./client-selector";
 
 interface SidebarUser {
-  sub: string;
-  name?: string;
-  email?: string;
-  picture?: string;
-  nickname?: string;
-  [key: string]: unknown;
+  id: number;
+  name: string;
+  email: string;
 }
 
 interface SidebarProps {
@@ -92,30 +89,20 @@ export function Sidebar({ user }: SidebarProps) {
       {user && (
         <div className="absolute bottom-0 left-0 right-0 border-t border-white/8 p-4">
           <div className="flex items-center gap-3 mb-3">
-            {user.picture ? (
-              <img
-                src={user.picture}
-                alt={user.name ?? "User"}
-                className="h-8 w-8 rounded-full"
-              />
-            ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground text-xs font-medium">
-                {(user.name ?? user.email ?? "U").charAt(0).toUpperCase()}
-              </div>
-            )}
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground text-xs font-medium">
+              {user.name.charAt(0).toUpperCase()}
+            </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-sidebar-foreground truncate">
-                {user.name ?? user.nickname ?? "User"}
+                {user.name}
               </p>
-              {user.email && (
-                <p className="text-xs text-sidebar-foreground/60 truncate">
-                  {user.email}
-                </p>
-              )}
+              <p className="text-xs text-sidebar-foreground/60 truncate">
+                {user.email}
+              </p>
             </div>
           </div>
           <a
-            href="/auth/logout"
+            href="/api/auth/logout"
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
               "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
