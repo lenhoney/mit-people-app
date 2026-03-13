@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import {
 import { Pencil, Trash2, Check, X, Search, UserPlus } from "lucide-react";
 import { AssignPersonDialog } from "./assign-person-dialog";
 import { useClient } from "@/components/layout/client-provider";
+import { usePermissions } from "@/components/layout/permissions-provider";
 
 interface PlannedWorkEntry {
   id: number;
@@ -39,12 +40,18 @@ export function PlannedWorkTable() {
   // Assign dialog state
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const { selectedClientId } = useClient();
+  const { canCreate, canUpdate, canDelete } = usePermissions();
 
   // Edit state
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editStart, setEditStart] = useState("");
   const [editEnd, setEditEnd] = useState("");
   const [editAllocation, setEditAllocation] = useState<number>(100);
+
+  const pwCanCreate = canCreate("planned-work");
+  const pwCanUpdate = canUpdate("planned-work");
+  const pwCanDelete = canDelete("planned-work");
+  const hasActions = pwCanUpdate || pwCanDelete;
 
   const loadData = useCallback(async (view: string) => {
     setLoading(true);
@@ -141,13 +148,15 @@ export function PlannedWorkTable() {
             <div className="text-sm text-muted-foreground">
               {filteredEntries.length} entries
             </div>
-            <Button
-              size="sm"
-              onClick={() => setAssignDialogOpen(true)}
-            >
-              <UserPlus className="h-4 w-4 mr-1.5" />
-              Assign Person
-            </Button>
+            {pwCanCreate && (
+              <Button
+                size="sm"
+                onClick={() => setAssignDialogOpen(true)}
+              >
+                <UserPlus className="h-4 w-4 mr-1.5" />
+                Assign Person
+              </Button>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -183,7 +192,9 @@ export function PlannedWorkTable() {
           <div className="py-16 text-center text-muted-foreground">
             No planned work entries.{" "}
             {entries.length === 0
-              ? "Click \"Assign Person\" to assign someone to a project, or use the Gantt chart to drag and create planned work."
+              ? pwCanCreate
+                ? "Click \"Assign Person\" to assign someone to a project, or use the Gantt chart to drag and create planned work."
+                : "No planned work has been created yet."
               : "Try adjusting your filter."}
           </div>
         ) : (
@@ -197,18 +208,20 @@ export function PlannedWorkTable() {
                   <TableHead>Planned Start</TableHead>
                   <TableHead>Planned End</TableHead>
                   <TableHead className="text-center w-[80px]">Alloc %</TableHead>
-                  <TableHead className="text-right w-[100px]">
-                    Actions
-                  </TableHead>
+                  {hasActions && (
+                    <TableHead className="text-right w-[100px]">
+                      Actions
+                    </TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {Array.from(groups.entries()).map(([groupKey, groupEntries]) => (
-                  <>
+                  <Fragment key={groupKey}>
                     {/* Group header */}
-                    <TableRow key={`gh-${groupKey}`} className="bg-muted/30">
+                    <TableRow className="bg-muted/30">
                       <TableCell
-                        colSpan={7}
+                        colSpan={hasActions ? 7 : 6}
                         className="font-medium text-sm py-2"
                       >
                         {groupKey}{" "}
@@ -279,55 +292,61 @@ export function PlannedWorkTable() {
                               </span>
                             )}
                           </TableCell>
-                          <TableCell className="text-right">
-                            {isEditing ? (
-                              <div className="flex items-center justify-end gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7"
-                                  onClick={() => handleSaveEdit(entry.id)}
-                                  title="Save"
-                                >
-                                  <Check className="h-3.5 w-3.5 text-green-600" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7"
-                                  onClick={handleCancelEdit}
-                                  title="Cancel"
-                                >
-                                  <X className="h-3.5 w-3.5 text-muted-foreground" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center justify-end gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7"
-                                  onClick={() => handleStartEdit(entry)}
-                                  title="Edit"
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7"
-                                  onClick={() => handleDelete(entry.id)}
-                                  title="Delete"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                                </Button>
-                              </div>
-                            )}
-                          </TableCell>
+                          {hasActions && (
+                            <TableCell className="text-right">
+                              {isEditing ? (
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => handleSaveEdit(entry.id)}
+                                    title="Save"
+                                  >
+                                    <Check className="h-3.5 w-3.5 text-green-600" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={handleCancelEdit}
+                                    title="Cancel"
+                                  >
+                                    <X className="h-3.5 w-3.5 text-muted-foreground" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-end gap-1">
+                                  {pwCanUpdate && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7"
+                                      onClick={() => handleStartEdit(entry)}
+                                      title="Edit"
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                  {pwCanDelete && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7"
+                                      onClick={() => handleDelete(entry.id)}
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
+                            </TableCell>
+                          )}
                         </TableRow>
                       );
                     })}
-                  </>
+                  </Fragment>
                 ))}
               </TableBody>
             </Table>

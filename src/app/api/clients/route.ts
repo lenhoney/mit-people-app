@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, withTransaction } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
+import { requirePermission } from "@/lib/auth";
 
 interface ClientRow {
   id: number;
@@ -15,6 +16,11 @@ interface ClientRow {
 }
 
 export async function GET() {
+  const auth = await requirePermission("clients", "read");
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   try {
     const clients = await query<ClientRow>(
       `SELECT c.*, STRING_AGG(bu.short_name::text, ',') as business_units
@@ -41,6 +47,11 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission("clients", "create");
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   try {
     const body = await request.json();
     const { name, short_name, contact_person, contact_email, business_unit_ids } = body;

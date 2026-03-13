@@ -37,10 +37,16 @@ export function ClientProvider({ children }: { children: ReactNode }) {
   const loadClients = useCallback(async () => {
     try {
       const res = await fetch("/api/clients");
+      if (!res.ok) {
+        setClients([]);
+        return [] as Client[];
+      }
       const data = await res.json();
-      setClients(data);
-      return data as Client[];
+      const arr = Array.isArray(data) ? data : [];
+      setClients(arr);
+      return arr as Client[];
     } catch {
+      setClients([]);
       return [] as Client[];
     }
   }, []);

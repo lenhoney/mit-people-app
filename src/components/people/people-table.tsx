@@ -19,6 +19,8 @@ interface PeopleTableProps {
   people: PersonData[];
   onEdit: (person: PersonData) => void;
   onDelete: (id: number) => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 type SortField = "person" | "role" | "sow" | "rate" | "business_unit";
@@ -39,7 +41,7 @@ function CountryFlag({ country, countryCodeMap }: { country: string | undefined;
   );
 }
 
-export function PeopleTable({ people, onEdit, onDelete }: PeopleTableProps) {
+export function PeopleTable({ people, onEdit, onDelete, canEdit = true, canDelete = true }: PeopleTableProps) {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("person");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -47,8 +49,12 @@ export function PeopleTable({ people, onEdit, onDelete }: PeopleTableProps) {
 
   useEffect(() => {
     fetch("/api/countries")
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) return [];
+        return res.json();
+      })
       .then((data: { name: string; code: string }[]) => {
+        if (!Array.isArray(data)) return;
         const map: Record<string, string> = {};
         for (const c of data) map[c.name] = c.code;
         setCountryCodeMap(map);
@@ -130,7 +136,7 @@ export function PeopleTable({ people, onEdit, onDelete }: PeopleTableProps) {
               <TableHead>Teams</TableHead>
               <TableHead><SortButton field="business_unit">Business Unit</SortButton></TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-[100px]">Actions</TableHead>
+              {(canEdit || canDelete) && <TableHead className="w-[100px]">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -190,21 +196,27 @@ export function PeopleTable({ people, onEdit, onDelete }: PeopleTableProps) {
                       <Badge variant="outline" className="text-xs text-green-700 border-green-300 dark:text-green-400 dark:border-green-700">Active</Badge>
                     )}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(person)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => person.id && onDelete(person.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </TableCell>
+                  {(canEdit || canDelete) && (
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {canEdit && (
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(person)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => person.id && onDelete(person.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
                 );
               })

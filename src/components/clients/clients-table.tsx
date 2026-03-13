@@ -19,6 +19,8 @@ interface ClientsTableProps {
   clients: ClientData[];
   onEdit: (client: ClientData) => void;
   onDelete: (id: number) => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 type SortField = "short_name" | "name" | "contact_person";
@@ -28,6 +30,8 @@ export function ClientsTable({
   clients,
   onEdit,
   onDelete,
+  canEdit = true,
+  canDelete = true,
 }: ClientsTableProps) {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("short_name");
@@ -116,7 +120,7 @@ export function ClientsTable({
               </TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Business Units</TableHead>
-              <TableHead className="w-[100px]">Actions</TableHead>
+              {(canEdit || canDelete) && <TableHead className="w-[100px]">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -169,26 +173,32 @@ export function ClientsTable({
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => onEdit(client)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => client.id && onDelete(client.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </TableCell>
+                  {(canEdit || canDelete) && (
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {canEdit && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => onEdit(client)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => client.id && onDelete(client.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}

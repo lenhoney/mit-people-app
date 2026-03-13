@@ -8,18 +8,21 @@ import {
   BusinessUnitData,
 } from "@/components/business-units/business-unit-dialog";
 import { Building2 } from "lucide-react";
+import { usePermissions } from "@/components/layout/permissions-provider";
 
 export default function BusinessUnitsPage() {
   const [businessUnits, setBusinessUnits] = useState<BusinessUnitData[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUnit, setEditingUnit] = useState<BusinessUnitData | null>(null);
+  const { canCreate, canUpdate, canDelete } = usePermissions();
 
   const loadBusinessUnits = useCallback(async () => {
     try {
       const res = await fetch("/api/business-units");
+      if (!res.ok) { setBusinessUnits([]); return; }
       const data = await res.json();
-      setBusinessUnits(data);
+      setBusinessUnits(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load business units:", err);
     } finally {
@@ -81,16 +84,20 @@ export default function BusinessUnitsPage() {
             Manage your business units
           </p>
         </div>
-        <Button onClick={handleAdd}>
-          <Building2 className="h-4 w-4 mr-2" />
-          Add Business Unit
-        </Button>
+        {canCreate("business-units") && (
+          <Button onClick={handleAdd}>
+            <Building2 className="h-4 w-4 mr-2" />
+            Add Business Unit
+          </Button>
+        )}
       </div>
 
       <BusinessUnitsTable
         businessUnits={businessUnits}
         onEdit={handleEdit}
         onDelete={handleDelete}
+        canEdit={canUpdate("business-units")}
+        canDelete={canDelete("business-units")}
       />
 
       <BusinessUnitDialog

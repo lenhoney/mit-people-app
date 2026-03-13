@@ -43,10 +43,14 @@ const ACTION_BADGE_STYLES: Record<string, string> = {
   CREATE: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
   UPDATE: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
   DELETE: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+  LOGIN_SUCCESS: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+  LOGIN_FAILED: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300",
+  ACCOUNT_QUARANTINED: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+  ACCOUNT_UNQUARANTINED: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
 };
 
 function formatDateTime(dateStr: string) {
-  const d = new Date(dateStr + "Z");
+  const d = new Date(dateStr);
   return d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -97,6 +101,7 @@ export default function AuditTrailPage() {
       params.set("pageSize", "50");
 
       const res = await fetch(`/api/audit-trail?${params}`);
+      if (!res.ok) { setEntries([]); return; }
       const data = await res.json();
 
       setEntries(data.data || []);
@@ -169,6 +174,10 @@ export default function AuditTrailPage() {
               <SelectItem value="CREATE">Create</SelectItem>
               <SelectItem value="UPDATE">Update</SelectItem>
               <SelectItem value="DELETE">Delete</SelectItem>
+              <SelectItem value="LOGIN_SUCCESS">Login Success</SelectItem>
+              <SelectItem value="LOGIN_FAILED">Login Failed</SelectItem>
+              <SelectItem value="ACCOUNT_QUARANTINED">Account Quarantined</SelectItem>
+              <SelectItem value="ACCOUNT_UNQUARANTINED">Account Unquarantined</SelectItem>
             </SelectContent>
           </Select>
         </div>

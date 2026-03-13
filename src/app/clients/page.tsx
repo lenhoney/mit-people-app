@@ -5,18 +5,21 @@ import { Button } from "@/components/ui/button";
 import { ClientsTable } from "@/components/clients/clients-table";
 import { ClientDialog, ClientData } from "@/components/clients/client-dialog";
 import { Handshake } from "lucide-react";
+import { usePermissions } from "@/components/layout/permissions-provider";
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<ClientData[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<ClientData | null>(null);
+  const { canCreate, canUpdate, canDelete } = usePermissions();
 
   const loadClients = useCallback(async () => {
     try {
       const res = await fetch("/api/clients");
+      if (!res.ok) { setClients([]); return; }
       const data = await res.json();
-      setClients(data);
+      setClients(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load clients:", err);
     } finally {
@@ -76,16 +79,20 @@ export default function ClientsPage() {
             Manage your clients
           </p>
         </div>
-        <Button onClick={handleAdd}>
-          <Handshake className="h-4 w-4 mr-2" />
-          Add Client
-        </Button>
+        {canCreate("clients") && (
+          <Button onClick={handleAdd}>
+            <Handshake className="h-4 w-4 mr-2" />
+            Add Client
+          </Button>
+        )}
       </div>
 
       <ClientsTable
         clients={clients}
         onEdit={handleEdit}
         onDelete={handleDelete}
+        canEdit={canUpdate("clients")}
+        canDelete={canDelete("clients")}
       />
 
       <ClientDialog

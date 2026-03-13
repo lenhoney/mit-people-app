@@ -81,9 +81,12 @@ export function AssignPersonDialog({
     setLoadingProjects(true);
 
     fetch("/api/people")
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) return [];
+        return res.json();
+      })
       .then((data) => {
-        // Only show active people
+        if (!Array.isArray(data)) { setPeople([]); return; }
         setPeople(
           (data as PersonOption[]).filter(
             (p) => (p.status || "Active") === "Active"
@@ -94,8 +97,11 @@ export function AssignPersonDialog({
       .finally(() => setLoadingPeople(false));
 
     fetch("/api/projects")
-      .then((res) => res.json())
-      .then((data) => setProjects(data as ProjectOption[]))
+      .then((res) => {
+        if (!res.ok) return [];
+        return res.json();
+      })
+      .then((data) => setProjects(Array.isArray(data) ? data as ProjectOption[] : []))
       .catch(console.error)
       .finally(() => setLoadingProjects(false));
   }, [open]);

@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
+import { requirePermission } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission("timesheets", "read");
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const user = searchParams.get("user");

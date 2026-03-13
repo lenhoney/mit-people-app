@@ -106,10 +106,11 @@ export function PTOReport() {
       if (typeFilter !== "all") params.set("type", typeFilter);
 
       const res = await fetch(`/api/reports/pto?${params}`);
+      if (!res.ok) { setSummary([]); setDetails([]); setTotals(null); return; }
       const data = await res.json();
-      setSummary(data.summary);
-      setDetails(data.details);
-      setTotals(data.totals);
+      setSummary(data.summary || []);
+      setDetails(data.details || []);
+      setTotals(data.totals || null);
     } catch (err) {
       console.error("Failed to load PTO report:", err);
     } finally {

@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cleanupPlannedWork, query, queryOne, execute } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
+import { requirePermission } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission("planned-work", "read");
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   try {
     // Clean up past-dated planned work before returning data
     await cleanupPlannedWork();
@@ -50,6 +56,11 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission("planned-work", "create");
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   try {
     const body = await request.json();
     const { person_id, task_number, task_description, planned_start, planned_end, allocation_pct } =

@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button";
 import { PTOTable, PTOEntry } from "@/components/pto/pto-table";
 import { PTOUploadDialog } from "@/components/pto/pto-upload-dialog";
 import { Upload } from "lucide-react";
+import { usePermissions } from "@/components/layout/permissions-provider";
 
 export default function TimeOffPage() {
   const [entries, setEntries] = useState<PTOEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const { canCreate, canDelete } = usePermissions();
 
   const loadEntries = useCallback(async () => {
     try {
@@ -65,13 +67,15 @@ export default function TimeOffPage() {
             Manage planned personal time off, sick leave, and holidays
           </p>
         </div>
-        <Button onClick={() => setUploadOpen(true)}>
-          <Upload className="h-4 w-4 mr-2" />
-          Upload PTO
-        </Button>
+        {canCreate("time-off") && (
+          <Button onClick={() => setUploadOpen(true)}>
+            <Upload className="h-4 w-4 mr-2" />
+            Upload PTO
+          </Button>
+        )}
       </div>
 
-      <PTOTable entries={entries} onDelete={handleDelete} />
+      <PTOTable entries={entries} onDelete={handleDelete} canDelete={canDelete("time-off")} />
 
       <PTOUploadDialog
         open={uploadOpen}

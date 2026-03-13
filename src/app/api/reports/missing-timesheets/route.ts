@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { requirePermission } from "@/lib/auth";
 
 // Day-level hours: only count hours for days whose actual date falls within the range
 // $1 = startDate, $2 = endDate
@@ -17,6 +18,11 @@ const DAY_HOURS_SQL = `(
 const WEEK_OVERLAP_FILTER = `(t.week_starts_on::date + 6) >= $1::date AND t.week_starts_on <= $2::date`;
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission("reports", "read");
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get("startDate");

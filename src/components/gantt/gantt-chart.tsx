@@ -12,14 +12,24 @@ import {
   ChevronRight,
   CalendarDays,
 } from "lucide-react";
-import {
-  startOfWeek,
-  addWeeks,
-  differenceInWeeks,
-  format,
-  parseISO,
-} from "date-fns";
+import { format, parseISO } from "date-fns";
 import { useClient } from "@/components/layout/client-provider";
+import {
+  ROW_HEIGHT,
+  HEADER_HEIGHT,
+  LABEL_WIDTH,
+  DEFAULT_PX_PER_WEEK,
+  MIN_PX_PER_WEEK,
+  MAX_PX_PER_WEEK,
+  ZOOM_STEP,
+  FUTURE_PADDING_WEEKS,
+  dateToX,
+  xToDate,
+  buildTimeline,
+  TimelineHeaderContent,
+  GridLines,
+  type TimelineConfig,
+} from "./gantt-utils";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,14 +80,6 @@ interface PeopleGanttPerson {
   projects: PeopleGanttProject[];
 }
 
-interface TimelineConfig {
-  startDate: Date;
-  endDate: Date;
-  totalWeeks: number;
-  pixelsPerWeek: number;
-  timelineWidth: number;
-}
-
 // Unified row types for both views
 type ProjectViewRow =
   | { type: "group"; groupLabel: string; projectCount: number; earliest_week: string; latest_week: string }
@@ -109,48 +111,7 @@ interface DragState {
 const ACTUAL_FILL = "var(--chart-1)";
 const PLANNED_FILL = "var(--chart-4)";
 
-// ── Constants ────────────────────────────────────────────────────────────────
-const ROW_HEIGHT = 36;
-const HEADER_HEIGHT = 48;
-const LABEL_WIDTH = 320;
-const DEFAULT_PX_PER_WEEK = 40;
-const MIN_PX_PER_WEEK = 16;
-const MAX_PX_PER_WEEK = 120;
-const ZOOM_STEP = 8;
-const FUTURE_PADDING_WEEKS = 12;
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function dateToX(dateStr: string, tl: TimelineConfig): number {
-  const d = parseISO(dateStr);
-  const weeks = differenceInWeeks(d, tl.startDate);
-  return weeks * tl.pixelsPerWeek;
-}
-
-function xToDate(x: number, tl: TimelineConfig): string {
-  const weeks = Math.round(x / tl.pixelsPerWeek);
-  const d = addWeeks(tl.startDate, weeks);
-  return format(d, "yyyy-MM-dd");
-}
-
-function buildTimeline(
-  dateRange: { start: string; end: string },
-  pixelsPerWeek: number
-): TimelineConfig {
-  const s = startOfWeek(parseISO(dateRange.start), { weekStartsOn: 0 });
-  const e = addWeeks(
-    startOfWeek(parseISO(dateRange.end), { weekStartsOn: 0 }),
-    FUTURE_PADDING_WEEKS
-  );
-  const totalWeeks = Math.max(differenceInWeeks(e, s), 1) + 1;
-  return {
-    startDate: s,
-    endDate: e,
-    totalWeeks,
-    pixelsPerWeek,
-    timelineWidth: totalWeeks * pixelsPerWeek,
-  };
-}
 
 function projectActualEnd(project: GanttProject): string {
   let latest = "";
@@ -387,7 +348,7 @@ function AllocationBadge({ total }: { total: number | undefined }) {
 
 export type GanttViewMode = "project" | "people";
 
-export function GanttChart({ viewMode }: { viewMode: GanttViewMode }) {
+export function GanttChart({ viewMode, readOnly = false }: { viewMode: GanttViewMode; readOnly?: boolean }) {
   // Project view state
   const [projects, setProjects] = useState<GanttProject[]>([]);
   // People view state
@@ -1131,6 +1092,7 @@ export function GanttChart({ viewMode }: { viewMode: GanttViewMode }) {
                             timeline={timeline}
                             dragState={dragState}
                             onDragStart={handleProjectDragStart}
+                            readOnly={readOnly}
                           />
                         );
                       } else {
@@ -1143,6 +1105,7 @@ export function GanttChart({ viewMode }: { viewMode: GanttViewMode }) {
                             timeline={timeline}
                             dragState={dragState}
                             onDragStart={handlePersonDragStart}
+                            readOnly={readOnly}
                           />
                         );
                       }
@@ -1168,6 +1131,7 @@ export function GanttChart({ viewMode }: { viewMode: GanttViewMode }) {
                             timeline={timeline}
                             dragState={dragState}
                             onDragStart={handlePersonDragStart}
+                            readOnly={readOnly}
                           />
                         );
                       }
@@ -1181,110 +1145,12 @@ export function GanttChart({ viewMode }: { viewMode: GanttViewMode }) {
         <p className="text-xs text-muted-foreground">
           {viewMode === "project"
             ? "Click a project to expand and see people."
-            : "Click a person to expand and see their projects."}{" "}
-          Drag the right edge of a bar to extend or reduce planned work. Drag
-          left to decrease, right to increase.
+            : "Click a person to expand and see their projects."}
+          {!readOnly && " Drag the right edge of a bar to extend or reduce planned work. Drag left to decrease, right to increase."}
         </p>
       </CardContent>
     </Card>
   );
-}
-
-// ── Timeline Header Content (month labels & dividers) ────────────────────────
-
-function TimelineHeaderContent({ timeline }: { timeline: TimelineConfig }) {
-  const { startDate, totalWeeks, pixelsPerWeek } = timeline;
-  const elements: React.ReactNode[] = [];
-  let currentMonth = "";
-
-  for (let w = 0; w <= totalWeeks; w++) {
-    const weekDate = addWeeks(startDate, w);
-    const x = w * pixelsPerWeek;
-    const monthLabel = format(weekDate, "MMM yyyy");
-
-    if (monthLabel !== currentMonth) {
-      currentMonth = monthLabel;
-      elements.push(
-        <line
-          key={`mg-${w}`}
-          x1={x}
-          y1={0}
-          x2={x}
-          y2={HEADER_HEIGHT}
-          stroke="currentColor"
-          strokeOpacity={0.15}
-          strokeWidth={1}
-        />
-      );
-      elements.push(
-        <text
-          key={`ml-${w}`}
-          x={x + 4}
-          y={HEADER_HEIGHT - 10}
-          fontSize={11}
-          fill="currentColor"
-          fillOpacity={0.5}
-          className="select-none"
-          style={{ fontFamily: "inherit" }}
-        >
-          {monthLabel}
-        </text>
-      );
-    }
-  }
-
-  return <g>{elements}</g>;
-}
-
-// ── Grid Lines ──────────────────────────────────────────────────────────────
-
-function GridLines({
-  timeline,
-  totalHeight,
-}: {
-  timeline: TimelineConfig;
-  totalHeight: number;
-}) {
-  const { startDate, totalWeeks, pixelsPerWeek } = timeline;
-  const elements: React.ReactNode[] = [];
-  let currentMonth = "";
-
-  for (let w = 0; w <= totalWeeks; w++) {
-    const weekDate = addWeeks(startDate, w);
-    const x = w * pixelsPerWeek;
-    const monthLabel = format(weekDate, "MMM yyyy");
-
-    elements.push(
-      <line
-        key={`wg-${w}`}
-        x1={x}
-        y1={0}
-        x2={x}
-        y2={totalHeight}
-        stroke="currentColor"
-        strokeOpacity={0.06}
-        strokeWidth={1}
-      />
-    );
-
-    if (monthLabel !== currentMonth) {
-      currentMonth = monthLabel;
-      elements.push(
-        <line
-          key={`mg-${w}`}
-          x1={x}
-          y1={0}
-          x2={x}
-          y2={totalHeight}
-          stroke="currentColor"
-          strokeOpacity={0.15}
-          strokeWidth={1}
-        />
-      );
-    }
-  }
-
-  return <g>{elements}</g>;
 }
 
 // ── Group Parent Bar (for Project View grouping) ──────────────────────────────
@@ -1366,6 +1232,7 @@ function ProjectParentBar({
   timeline,
   dragState,
   onDragStart,
+  readOnly = false,
 }: {
   project: GanttProject;
   y: number;
@@ -1379,6 +1246,7 @@ function ProjectParentBar({
     endX: number,
     actualEndX: number
   ) => void;
+  readOnly?: boolean;
 }) {
   const barH = ROW_HEIGHT * 0.4;
   const barY = y + (ROW_HEIGHT - barH) / 2;
@@ -1472,27 +1340,29 @@ function ProjectParentBar({
           />
         </>
       )}
-      <rect
-        x={handleX - handleW / 2}
-        y={barY - 1}
-        width={handleW}
-        height={barH + 2}
-        rx={2}
-        fill={ACTUAL_FILL}
-        fillOpacity={isBeingDragged ? 1 : 0.6}
-        className="cursor-ew-resize"
-        onMouseDown={(e) => {
-          e.stopPropagation();
-          onDragStart(
-            e,
-            project.task_number,
-            project.task_description,
-            projActEnd,
-            effectiveEndX,
-            actualEndX
-          );
-        }}
-      />
+      {!readOnly && (
+        <rect
+          x={handleX - handleW / 2}
+          y={barY - 1}
+          width={handleW}
+          height={barH + 2}
+          rx={2}
+          fill={ACTUAL_FILL}
+          fillOpacity={isBeingDragged ? 1 : 0.6}
+          className="cursor-ew-resize"
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            onDragStart(
+              e,
+              project.task_number,
+              project.task_description,
+              projActEnd,
+              effectiveEndX,
+              actualEndX
+            );
+          }}
+        />
+      )}
       <line
         x1={0}
         y1={y + ROW_HEIGHT}
@@ -1503,8 +1373,7 @@ function ProjectParentBar({
         strokeWidth={1}
       />
       <title>
-        {project.task_description} ({project.people.length} people) — Drag
-        handle to plan
+        {project.task_description} ({project.people.length} people){!readOnly && " — Drag handle to plan"}
       </title>
     </g>
   );
@@ -1519,6 +1388,7 @@ function PersonChildBar({
   timeline,
   dragState,
   onDragStart,
+  readOnly = false,
 }: {
   person: GanttPerson;
   project: GanttProject;
@@ -1535,6 +1405,7 @@ function PersonChildBar({
     actualEndX: number,
     allocationPct: number
   ) => void;
+  readOnly?: boolean;
 }) {
   const maxBarH = ROW_HEIGHT * 0.55;
   const allocationPct = person.planned_work?.allocation_pct ?? 100;
@@ -1655,28 +1526,30 @@ function PersonChildBar({
           />
         </>
       )}
-      <rect
-        x={handleX - handleW / 2}
-        y={barY - 1}
-        width={handleW}
-        height={barH + 2}
-        rx={2}
-        fill={ACTUAL_FILL}
-        fillOpacity={isBeingDraggedDirectly ? 1 : 0.7}
-        className="cursor-ew-resize"
-        onMouseDown={(e) =>
-          onDragStart(
-            e,
-            person.person_id,
-            project.task_number,
-            project.task_description,
-            dragAnchorEnd,
-            effectiveEndX,
-            hasActual ? actualEndX : plannedStartX,
-            allocationPct
-          )
-        }
-      />
+      {!readOnly && (
+        <rect
+          x={handleX - handleW / 2}
+          y={barY - 1}
+          width={handleW}
+          height={barH + 2}
+          rx={2}
+          fill={ACTUAL_FILL}
+          fillOpacity={isBeingDraggedDirectly ? 1 : 0.7}
+          className="cursor-ew-resize"
+          onMouseDown={(e) =>
+            onDragStart(
+              e,
+              person.person_id,
+              project.task_number,
+              project.task_description,
+              dragAnchorEnd,
+              effectiveEndX,
+              hasActual ? actualEndX : plannedStartX,
+              allocationPct
+            )
+          }
+        />
+      )}
       {/* Allocation % label on the planned bar */}
       {hasPlanned && plannedBarWidth > 24 && (
         <text
@@ -1698,7 +1571,7 @@ function PersonChildBar({
         {person.user_name}: {hasActual ? `${person.total_hours.toFixed(1)}h actual` : "No timesheets"}
         {hasPlanned
           ? ` | Planned ${person.planned_work!.planned_start} to ${person.planned_work!.planned_end} (${allocationPct}%)`
-          : " | Drag to plan"}
+          : !readOnly ? " | Drag to plan" : ""}
       </title>
     </g>
   );
@@ -1814,6 +1687,7 @@ function ProjectChildBar({
   timeline,
   dragState,
   onDragStart,
+  readOnly = false,
 }: {
   projectData: PeopleGanttProject;
   personData: PeopleGanttPerson;
@@ -1830,6 +1704,7 @@ function ProjectChildBar({
     actualEndX: number,
     allocationPct: number
   ) => void;
+  readOnly?: boolean;
 }) {
   const barH = ROW_HEIGHT * 0.55;
   const barY = y + (ROW_HEIGHT - barH) / 2;
@@ -1929,28 +1804,30 @@ function ProjectChildBar({
           />
         </>
       )}
-      <rect
-        x={handleX - handleW / 2}
-        y={barY - 1}
-        width={handleW}
-        height={barH + 2}
-        rx={2}
-        fill={ACTUAL_FILL}
-        fillOpacity={isBeingDragged ? 1 : 0.7}
-        className="cursor-ew-resize"
-        onMouseDown={(e) =>
-          onDragStart(
-            e,
-            personData.person_id,
-            projectData.task_number,
-            projectData.task_description,
-            dragAnchorEnd,
-            effectiveEndX,
-            hasActual ? actualEndX : plannedStartX,
-            projectData.planned_work?.allocation_pct ?? 100
-          )
-        }
-      />
+      {!readOnly && (
+        <rect
+          x={handleX - handleW / 2}
+          y={barY - 1}
+          width={handleW}
+          height={barH + 2}
+          rx={2}
+          fill={ACTUAL_FILL}
+          fillOpacity={isBeingDragged ? 1 : 0.7}
+          className="cursor-ew-resize"
+          onMouseDown={(e) =>
+            onDragStart(
+              e,
+              personData.person_id,
+              projectData.task_number,
+              projectData.task_description,
+              dragAnchorEnd,
+              effectiveEndX,
+              hasActual ? actualEndX : plannedStartX,
+              projectData.planned_work?.allocation_pct ?? 100
+            )
+          }
+        />
+      )}
       {/* Allocation % label on the planned bar */}
       {hasPlanned && plannedBarWidth > 24 && (
         <text
@@ -1972,7 +1849,7 @@ function ProjectChildBar({
         {projectData.task_description}: {hasActual ? `${projectData.total_hours.toFixed(1)}h actual` : "No timesheets"}
         {hasPlanned
           ? ` | Planned ${projectData.planned_work!.planned_start} to ${projectData.planned_work!.planned_end} (${projectData.planned_work!.allocation_pct}%)`
-          : " | Drag to plan"}
+          : !readOnly ? " | Drag to plan" : ""}
       </title>
     </g>
   );

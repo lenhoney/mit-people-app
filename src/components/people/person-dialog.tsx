@@ -131,12 +131,18 @@ export function PersonDialog({ open, onOpenChange, person, onSave }: PersonDialo
 
   useEffect(() => {
     fetch("/api/countries")
-      .then((res) => res.json())
-      .then((data) => setCountries(data))
+      .then((res) => {
+        if (!res.ok) return [];
+        return res.json();
+      })
+      .then((data) => setCountries(Array.isArray(data) ? data : []))
       .catch(() => {});
     fetch("/api/business-units")
-      .then((res) => res.json())
-      .then((data) => setBusinessUnits(data))
+      .then((res) => {
+        if (!res.ok) return [];
+        return res.json();
+      })
+      .then((data) => setBusinessUnits(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
 

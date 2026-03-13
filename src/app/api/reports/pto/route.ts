@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { requirePermission } from "@/lib/auth";
 
 interface PTOPersonSummary {
   person_name: string;
@@ -28,6 +29,11 @@ interface PTODetail {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission("reports", "read");
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get("startDate");

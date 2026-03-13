@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, cleanupPlannedWork } from "@/lib/db";
+import { requirePermission } from "@/lib/auth";
 
 interface TimesheetRangeRow {
   task_number: string;
@@ -23,6 +24,11 @@ interface PlannedWorkRow {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission("gantt", "read");
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   try {
     // Clean up past-dated planned work before returning data
     await cleanupPlannedWork();

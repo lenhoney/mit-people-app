@@ -9,6 +9,7 @@ import {
 } from "@/components/projects/project-dialog";
 import { FolderPlus } from "lucide-react";
 import { useClient } from "@/components/layout/client-provider";
+import { usePermissions } from "@/components/layout/permissions-provider";
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectData[]>([]);
@@ -20,12 +21,14 @@ export default function ProjectsPage() {
   );
 
   const { selectedClientId } = useClient();
+  const { canCreate, canUpdate, canDelete } = usePermissions();
 
   const loadProjects = useCallback(async () => {
     try {
       const res = await fetch(`/api/projects?clientId=${selectedClientId}`);
+      if (!res.ok) { setProjects([]); return; }
       const data = await res.json();
-      setProjects(data);
+      setProjects(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load projects:", err);
     } finally {
@@ -36,8 +39,10 @@ export default function ProjectsPage() {
   const loadPeopleNames = useCallback(async () => {
     try {
       const res = await fetch("/api/people");
+      if (!res.ok) { setPeopleNames([]); return; }
       const data = await res.json();
-      const names = data
+      const arr = Array.isArray(data) ? data : [];
+      const names = arr
         .filter((p: { status?: string }) => (p.status || "Active") === "Active")
         .map((p: { person: string }) => p.person)
         .sort();
@@ -134,10 +139,12 @@ export default function ProjectsPage() {
             Manage project codes, names, budgets, and grouping labels
           </p>
         </div>
-        <Button onClick={handleAdd}>
-          <FolderPlus className="h-4 w-4 mr-2" />
-          Add Project
-        </Button>
+        {canCreate("projects") && (
+          <Button onClick={handleAdd}>
+            <FolderPlus className="h-4 w-4 mr-2" />
+            Add Project
+          </Button>
+        )}
       </div>
 
       <ProjectsTable
@@ -145,6 +152,8 @@ export default function ProjectsPage() {
         onEdit={handleEdit}
         onDelete={handleDelete}
         onStatusChange={handleStatusChange}
+        canEdit={canUpdate("projects")}
+        canDelete={canDelete("projects")}
       />
 
       <ProjectDialog

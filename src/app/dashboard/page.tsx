@@ -84,10 +84,21 @@ export default function DashboardPage() {
     const params = new URLSearchParams();
     if (selectedClientId) params.set("clientId", String(selectedClientId));
     fetch(`/api/dashboard?${params}`)
-      .then((res) => res.json())
+      .then(async (res) => {
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          console.error("Dashboard API error:", res.status, err);
+          setData(null);
+          setLoading(false);
+          return;
+        }
+        return res.json();
+      })
       .then((d) => {
-        setData(d);
-        setLoading(false);
+        if (d !== undefined) {
+          setData(d);
+          setLoading(false);
+        }
       })
       .catch((err) => {
         console.error("Failed to load dashboard:", err);

@@ -78,8 +78,11 @@ export function ClientDialog({
 
   useEffect(() => {
     fetch("/api/business-units")
-      .then((res) => res.json())
-      .then((data) => setBusinessUnits(data))
+      .then((res) => {
+        if (!res.ok) return [];
+        return res.json();
+      })
+      .then((data) => setBusinessUnits(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
 

@@ -3,7 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ClientProvider } from "@/components/layout/client-provider";
-import { getSession } from "@/lib/auth";
+import { PermissionsProvider } from "@/components/layout/permissions-provider";
+import { getSession, getUserPermissions } from "@/lib/auth";
 import { headers } from "next/headers";
 
 const geistSans = Geist({
@@ -27,6 +28,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const session = await getSession();
+  const permissions = session ? await getUserPermissions(session.id) : undefined;
 
   // Check if we're on the login page (no sidebar needed)
   const headersList = await headers();
@@ -42,12 +44,14 @@ export default async function RootLayout({
           <>{children}</>
         ) : (
           <ClientProvider>
-            <Sidebar user={session} />
-            <main className="ml-64 min-h-screen">
-              <div className="p-8">
-                {children}
-              </div>
-            </main>
+            <PermissionsProvider>
+              <Sidebar user={session} permissions={permissions} />
+              <main className="ml-64 min-h-screen">
+                <div className="p-8">
+                  {children}
+                </div>
+              </main>
+            </PermissionsProvider>
           </ClientProvider>
         )}
       </body>

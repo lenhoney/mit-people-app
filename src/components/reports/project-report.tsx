@@ -90,9 +90,10 @@ export function ProjectReport() {
       if (selectedClientId) params.set("clientId", String(selectedClientId));
 
       const res = await fetch(`/api/reports/projects?${params}`);
+      if (!res.ok) { setSummary([]); setDetails([]); return; }
       const data = await res.json();
-      setSummary(data.summary);
-      setDetails(data.details);
+      setSummary(data.summary || []);
+      setDetails(data.details || []);
     } catch (err) {
       console.error("Failed to load report:", err);
     } finally {

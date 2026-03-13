@@ -40,6 +40,7 @@ export interface PTOEntry {
 interface PTOTableProps {
   entries: PTOEntry[];
   onDelete: (id: number) => void;
+  canDelete?: boolean;
 }
 
 type SortField = "person_name" | "start_date" | "end_date" | "type" | "business_days" | "billable_days";
@@ -80,7 +81,7 @@ function getStatusColor(status: string | null): string {
   }
 }
 
-export function PTOTable({ entries, onDelete }: PTOTableProps) {
+export function PTOTable({ entries, onDelete, canDelete = true }: PTOTableProps) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [sortField, setSortField] = useState<SortField>("start_date");
@@ -227,7 +228,7 @@ export function PTOTable({ entries, onDelete }: PTOTableProps) {
                 <TableHead>Status</TableHead>
                 <TableHead>Country</TableHead>
                 <TableHead>Message</TableHead>
-                <TableHead className="text-right w-[60px]">Actions</TableHead>
+                {canDelete && <TableHead className="text-right w-[60px]">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -270,17 +271,19 @@ export function PTOTable({ entries, onDelete }: PTOTableProps) {
                   <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
                     {entry.message || "—"}
                   </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => onDelete(entry.id)}
-                      title="Delete"
-                    >
-                      <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                    </Button>
-                  </TableCell>
+                  {canDelete && (
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => onDelete(entry.id)}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

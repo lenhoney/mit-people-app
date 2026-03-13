@@ -15,6 +15,8 @@ import {
   CalendarCheck2,
   Palmtree,
   ScrollText,
+  Shield,
+  KeyRound,
   LogOut,
 } from "lucide-react";
 import { useClient } from "./client-provider";
@@ -26,27 +28,36 @@ interface SidebarUser {
   email: string;
 }
 
+type MenuPermissions = Record<string, { can_create: boolean; can_read: boolean; can_update: boolean; can_delete: boolean }>;
+
 interface SidebarProps {
   user: SidebarUser | null;
+  permissions?: MenuPermissions;
 }
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/people", label: "People", icon: Users },
-  { href: "/business-units", label: "Business Units", icon: Building2 },
-  { href: "/clients", label: "Clients", icon: Handshake },
-  { href: "/projects", label: "Projects", icon: FolderKanban },
-  { href: "/timesheets", label: "Timesheets", icon: Clock },
-  { href: "/reports", label: "Reports", icon: FileBarChart },
-  { href: "/gantt", label: "Gantt Chart", icon: GanttChart },
-  { href: "/planned-work", label: "Planned Work", icon: CalendarCheck2 },
-  { href: "/time-off", label: "Time Off", icon: Palmtree },
-  { href: "/audit-trail", label: "Audit Trail", icon: ScrollText },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, menuKey: "dashboard" },
+  { href: "/people", label: "People", icon: Users, menuKey: "people" },
+  { href: "/business-units", label: "Business Units", icon: Building2, menuKey: "business-units" },
+  { href: "/clients", label: "Clients", icon: Handshake, menuKey: "clients" },
+  { href: "/projects", label: "Projects", icon: FolderKanban, menuKey: "projects" },
+  { href: "/timesheets", label: "Timesheets", icon: Clock, menuKey: "timesheets" },
+  { href: "/reports", label: "Reports", icon: FileBarChart, menuKey: "reports" },
+  { href: "/gantt", label: "Gantt Chart", icon: GanttChart, menuKey: "gantt" },
+  { href: "/planned-work", label: "Planned Work", icon: CalendarCheck2, menuKey: "planned-work" },
+  { href: "/time-off", label: "Time Off", icon: Palmtree, menuKey: "time-off" },
+  { href: "/audit-trail", label: "Audit Trail", icon: ScrollText, menuKey: "audit-trail" },
+  { href: "/users", label: "Users", icon: Shield, menuKey: "users" },
+  { href: "/user-roles", label: "User Roles", icon: KeyRound, menuKey: "user-roles" },
 ];
 
-export function Sidebar({ user }: SidebarProps) {
+export function Sidebar({ user, permissions }: SidebarProps) {
   const pathname = usePathname();
   const { selectedClient } = useClient();
+
+  const visibleItems = permissions
+    ? navItems.filter((item) => permissions[item.menuKey]?.can_read)
+    : navItems;
 
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 glass">
@@ -66,7 +77,7 @@ export function Sidebar({ user }: SidebarProps) {
         </div>
       </div>
       <nav className="space-y-1 p-4">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link

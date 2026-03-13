@@ -20,6 +20,8 @@ interface ProjectsTableProps {
   onEdit: (project: ProjectData) => void;
   onDelete: (id: number) => void;
   onStatusChange: (id: number, status: string) => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 type SortField = "task_number" | "task_description" | "group_label" | "budget" | "project_lead" | "status";
@@ -30,6 +32,8 @@ export function ProjectsTable({
   onEdit,
   onDelete,
   onStatusChange,
+  canEdit = true,
+  canDelete = true,
 }: ProjectsTableProps) {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("task_description");
@@ -160,16 +164,28 @@ export function ProjectsTable({
           {project.project_lead || <span className="text-muted-foreground">—</span>}
         </TableCell>
         <TableCell className="text-center">
-          <button
-            onClick={() => {
-              if (project.id) {
-                onStatusChange(project.id, isCompleted ? "Started" : "Completed");
-              }
-            }}
-            className="inline-flex items-center"
-            title={`Click to set as ${isCompleted ? "Started" : "Completed"}`}
-          >
-            {isCompleted ? (
+          {canEdit ? (
+            <button
+              onClick={() => {
+                if (project.id) {
+                  onStatusChange(project.id, isCompleted ? "Started" : "Completed");
+                }
+              }}
+              className="inline-flex items-center"
+              title={`Click to set as ${isCompleted ? "Started" : "Completed"}`}
+            >
+              {isCompleted ? (
+                <span className="inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                  Completed
+                </span>
+              ) : (
+                <span className="inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400">
+                  Started
+                </span>
+              )}
+            </button>
+          ) : (
+            isCompleted ? (
               <span className="inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded bg-muted text-muted-foreground">
                 Completed
               </span>
@@ -177,31 +193,37 @@ export function ProjectsTable({
               <span className="inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400">
                 Started
               </span>
-            )}
-          </button>
+            )
+          )}
         </TableCell>
-        <TableCell className="text-right">
-          <div className="flex items-center justify-end gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => onEdit(project)}
-              title="Edit"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => project.id && onDelete(project.id)}
-              title="Delete"
-            >
-              <Trash2 className="h-3.5 w-3.5 text-red-500" />
-            </Button>
-          </div>
-        </TableCell>
+        {(canEdit || canDelete) && (
+          <TableCell className="text-right">
+            <div className="flex items-center justify-end gap-1">
+              {canEdit && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => onEdit(project)}
+                  title="Edit"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              {canDelete && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => project.id && onDelete(project.id)}
+                  title="Delete"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                </Button>
+              )}
+            </div>
+          </TableCell>
+        )}
       </TableRow>
     );
   };
@@ -240,7 +262,7 @@ export function ProjectsTable({
                 <SortHeader field="budget">Budget</SortHeader>
                 <SortHeader field="project_lead">Project Lead</SortHeader>
                 <SortHeader field="status">Status</SortHeader>
-                <TableHead className="text-right w-[100px]">Actions</TableHead>
+                {(canEdit || canDelete) && <TableHead className="text-right w-[100px]">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>

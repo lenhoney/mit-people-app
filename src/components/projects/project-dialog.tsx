@@ -67,8 +67,11 @@ export function ProjectDialog({
 
   useEffect(() => {
     fetch("/api/clients")
-      .then((res) => res.json())
-      .then((data) => setClients(data))
+      .then((res) => {
+        if (!res.ok) return [];
+        return res.json();
+      })
+      .then((data) => setClients(Array.isArray(data) ? data : []))
       .catch((err) => console.error("Failed to load clients:", err));
   }, []);
 

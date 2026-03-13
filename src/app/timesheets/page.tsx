@@ -14,6 +14,7 @@ import { TimesheetsTable } from "@/components/timesheets/timesheets-table";
 import { TimesheetsUploadDialog } from "@/components/timesheets/upload-dialog";
 import { Upload, Search, X } from "lucide-react";
 import { useClient } from "@/components/layout/client-provider";
+import { usePermissions } from "@/components/layout/permissions-provider";
 
 interface Timesheet {
   id: number;
@@ -55,6 +56,7 @@ export default function TimesheetsPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const { selectedClientId } = useClient();
+  const { canCreate } = usePermissions();
 
   const loadTimesheets = useCallback(async (page = 1) => {
     setLoading(true);
@@ -68,9 +70,10 @@ export default function TimesheetsPage() {
       if (selectedClientId) params.set("clientId", String(selectedClientId));
 
       const res = await fetch(`/api/timesheets?${params}`);
+      if (!res.ok) { setTimesheets([]); return; }
       const data = await res.json();
-      setTimesheets(data.data);
-      setPagination(data.pagination);
+      setTimesheets(data.data || []);
+      setPagination(data.pagination || { page: 1, pageSize: 50, total: 0, totalPages: 0 });
     } catch (err) {
       console.error("Failed to load timesheets:", err);
     } finally {
@@ -101,10 +104,12 @@ export default function TimesheetsPage() {
             View and manage consultant timesheets
           </p>
         </div>
-        <Button onClick={() => setUploadOpen(true)}>
-          <Upload className="h-4 w-4 mr-2" />
-          Upload Timesheets
-        </Button>
+        {canCreate("timesheets") && (
+          <Button onClick={() => setUploadOpen(true)}>
+            <Upload className="h-4 w-4 mr-2" />
+            Upload Timesheets
+          </Button>
+        )}
       </div>
 
       {/* Filters */}

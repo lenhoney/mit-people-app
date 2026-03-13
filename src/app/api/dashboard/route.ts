@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cleanupPlannedWork, query, queryOne } from "@/lib/db";
+import { requirePermission } from "@/lib/auth";
 
 interface RevenueRow {
   month: string;
@@ -148,6 +149,11 @@ function plannedBusinessDaysInMonth(
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requirePermission("dashboard", "read");
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   try {
     // Clean up past-dated planned work before calculating
     await cleanupPlannedWork();
