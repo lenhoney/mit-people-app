@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession, isSuperUser, hashPassword } from "@/lib/auth";
+import { getSession, isSuperUser, hashPassword, validatePassword } from "@/lib/auth";
 import { execute } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 
@@ -24,6 +24,11 @@ export async function PUT(
 
     if (!password) {
       return NextResponse.json({ error: "Password is required" }, { status: 400 });
+    }
+
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      return NextResponse.json({ error: passwordError }, { status: 400 });
     }
 
     const passwordHash = await hashPassword(password);

@@ -63,7 +63,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check quarantine BEFORE password verification (no timing leak)
+    // Check quarantine BEFORE password verification (no timing leak).
+    // Return the same generic error as unknown-user to prevent user enumeration.
     if (user.is_quarantined) {
       await logAudit(
         "LOGIN_FAILED",
@@ -73,8 +74,8 @@ export async function POST(request: NextRequest) {
         { name: user.name, email: user.email }
       );
       return NextResponse.json(
-        { error: "Account is quarantined. Contact your administrator." },
-        { status: 403 }
+        { error: "Invalid credentials" },
+        { status: 401 }
       );
     }
 
@@ -130,7 +131,8 @@ export async function POST(request: NextRequest) {
       [user.id]
     );
     if (parseInt(roleCount?.count ?? "0", 10) === 0) {
-      // Correct password but no roles — reset counter, deny access
+      // Correct password but no roles — reset counter, deny access.
+      // Return same generic error to prevent user enumeration.
       await execute(
         `UPDATE users SET failed_login_attempts = 0, updated_at = NOW() WHERE id = $1`,
         [user.id]
@@ -143,8 +145,8 @@ export async function POST(request: NextRequest) {
         { name: user.name, email: user.email }
       );
       return NextResponse.json(
-        { error: "No role assigned. Contact your administrator." },
-        { status: 403 }
+        { error: "Invalid credentials" },
+        { status: 401 }
       );
     }
 
