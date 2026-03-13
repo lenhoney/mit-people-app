@@ -36,7 +36,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
         return res.json();
       })
       .then((data) => {
-        if (data && typeof data === "object" && !data.error) {
+        if (data && typeof data === "object" && !("error" in data)) {
           setPermissions(data as MenuPermissions);
         }
       })
